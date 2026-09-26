@@ -64,6 +64,9 @@ func listRecipients(ctx context.Context, client onepassword.Client, logger *log.
 	for _, it := range items {
 		pub, err := client.PublicKey(ctx, it.VaultID, it.ID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("list recipients: %w", ctx.Err())
+			}
 			logger.Warn("skipping item: cannot read public key", "item", it.Title, "vault", it.VaultName, "err", err)
 			continue
 		}
