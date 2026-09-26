@@ -6,26 +6,25 @@
 
 **Architecture:** `cli → plugin → identity → onepassword(Client interface)`. `identity` matches age stanza tags against 1Password fingerprints and fetches one key lazily; `onepassword.OpClient` wraps the `op` CLI behind a typed interface so an SDK backend can be added later. Settings come from env/XDG config file because age starts the plugin without user flags.
 
-**Tech Stack:** Go 1.26, filippo.io/age v1.3.2 (plugin framework, agessh), golang.org/x/crypto/ssh, spf13/cobra, spf13/viper, charmbracelet/log, Taskfile (untcha/meta cli template), golangci-lint v2.
+**Tech Stack:** Go 1.27.1, filippo.io/age v1.3.2 (plugin framework, agessh), golang.org/x/crypto/ssh, spf13/cobra, spf13/viper, charmbracelet/log, Taskfile (untcha/meta cli template), golangci-lint v2.
 
 **Spec:** `docs/superpowers/specs/2026-09-26-age-plugin-onepassword-design.md`
 
 ## Global Constraints
 
 - Module `github.com/untcha/age-plugin-onepassword`; binary `age-plugin-onepassword`; plugin name `onepassword`; env prefix `AGE_PLUGIN_ONEPASSWORD_`.
-- `go.mod`: `go 1.26`. Pinned deps: `filippo.io/age v1.3.2`, `golang.org/x/crypto v0.57.0`, `github.com/spf13/cobra v1.10.2`, `github.com/spf13/viper v1.21.0`, `github.com/charmbracelet/log v1.0.0`.
+- `go.mod`: `go 1.27.1` (gobrew selects the toolchain from it; `.envrc` is local and never committed). Deps as verified at plan time: `filippo.io/age v1.3.2`, `golang.org/x/crypto v0.57.0`, `github.com/spf13/cobra v1.10.2`, `github.com/spf13/viper v1.21.0`, `github.com/charmbracelet/log v1.0.0` — Task 1 re-checks them against Go 1.27.1 and uses newer patch/minor releases if available.
+- Work happens on branch `feat/initial-implementation`.
+- Config paths (`op`, `log_file`): expand leading `~/`; `op` may be a bare command name; any other relative path is an error (age runs plugins with the temp dir as cwd).
+- Plugin-mode logging: `log_file` if set; with `AGEDEBUG=plugin` additionally stderr at debug level; neither → discarded.
 - No fang. No Nix. No references to other implementations in code, comments or docs.
 - `CGO_ENABLED=0` builds (Taskfile default).
-- **Never run `git init/add/commit`.** Each task ends by proposing a commit message per `docs/COMMIT_GUIDE.md`; the user commits.
+- **Never run `git add/commit/push`.** Each task ends by proposing a commit message per `docs/COMMIT_GUIDE.md`; the user commits.
 - Unit test function names must NOT start with `TestI` (common.yml `test:unit` runs `-run '^Test[^I]*$'`). Integration tests are `TestIntegration*` behind `//go:build integration`.
 - Lint config is `untcha/meta` `.golangci.yml` (gosec, funcorder, revive, gocritic, modernize, golines 120). Justify every `//nolint` inline. funcorder: constructor right after its type; exported methods before unexported.
 - Never log private keys or `op read` output. `op` must never inherit stdin/stderr (in plugin mode they carry the age protocol).
 - Every `op` call takes a `context.Context`.
 - If `task lint` reports golines/gofmt/goimports issues, run `task lint:fmt` first, then re-run `task lint`.
-
-**Deviations from spec (intentional, minor):**
-- E2E uses build tag `integration` and the shared `task test:integration` instead of a new `e2e` tag / `test:e2e` task — reuses `taskfiles/common.yml`.
-- Test SSH keys are generated at test time (`internal/testutil`) instead of committed fixture files — nothing secret-looking in the repo, same determinism of behavior.
 
 ## File Map
 
@@ -33,7 +32,7 @@
 go.mod, go.sum
 Taskfile.yml                          # from meta taskfiles/cli, vars set
 taskfiles/common.yml                  # from meta, unchanged
-taskfiles/Taskfile.project.yml        # from meta stub, header retitled
+taskfiles/Taskfile.project.yml        # from meta stub: install (version stamp), vuln
 .golangci.yml, .gitignore, LICENSE    # from meta, unchanged
 README.md
 cmd/age-plugin-onepassword/main.go    # signal ctx → cli.Execute → os.Exit
@@ -76,7 +75,8 @@ e2e/roundtrip_test.go                 # //go:build integration
 ```bash
 cd /Users/untcha/Development/repositories/golang/age-plugin-onepassword
 go mod init github.com/untcha/age-plugin-onepassword
-go mod edit -go=1.26
+go mod edit -go=1.27.1
+go version   # must print go1.27.1 (gobrew reads go.mod via the local .envrc)
 rm -rf /tmp/meta && git clone --depth 1 https://github.com/untcha/meta /tmp/meta
 mkdir -p taskfiles
 cp /tmp/meta/.gitignore /tmp/meta/.golangci.yml /tmp/meta/LICENSE .
@@ -97,13 +97,43 @@ In `Taskfile.yml` set:
 
 Confirm the include reads `taskfile: ./taskfiles/common.yml` and the project include reads `taskfile: ./taskfiles/Taskfile.project.yml` (both already so in the cli template; do not change to `../`).
 
-In `taskfiles/Taskfile.project.yml` replace the first comment block (lines starting `# Source:` … up to `tasks: {}`) header line with:
+Replace `taskfiles/Taskfile.project.yml` entirely with:
 
 ```yaml
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
 # Project tasks for age-plugin-onepassword (run as `task project:<name>`).
+# Included by Taskfile.yml with optional: true — keep this path.
+
+tasks:
+  install:
+    desc: Install the binary in ~/.local/bin with the version stamped from git describe
+    cmds:
+      # A new task process, so the root Taskfile's LDFLAGS sees VERSION in its env.
+      - VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" task install
+
+  vuln:
+    desc: Scan dependencies for known vulnerabilities (pinned govulncheck)
+    cmds:
+      - go tool govulncheck ./...
 ```
 
-Keep `tasks: {}`.
+Pin govulncheck as a tool:
+
+```bash
+go get -tool golang.org/x/vuln/cmd/govulncheck@latest
+```
+
+Re-check dependency versions against Go 1.27.1 (record the output; later tasks use these versions if newer than the Global Constraints list):
+
+```bash
+for m in filippo.io/age golang.org/x/crypto github.com/spf13/cobra github.com/spf13/viper github.com/charmbracelet/log; do
+  go list -m -f '{{.Path}} {{.Version}}' "$m@latest"
+done
+```
+
+Do not add `.envrc` to git.
 
 Check `LICENSE` copyright line names the user; if it names a different holder/year, ask the user before editing.
 
@@ -153,18 +183,19 @@ func String() string {
 
 - [ ] **Step 6: Verify**
 
-Run: `go test ./internal/appmeta/ && task lint && task --list-all`
-Expected: `ok`, lint clean, task list includes `build`, `test:integration`, `lint`.
+Run: `go test ./internal/appmeta/ && task lint && task project:vuln && task --list-all`
+Expected: `ok`, lint clean, `No vulnerabilities found.`, task list includes `build`, `test:integration`, `lint`, `project:install`, `project:vuln`.
 
 - [ ] **Step 7: Propose commit**
 
 ```
 build 🏗(scaffold): init module, tooling and build metadata
 
-Initialise the Go module and vendor the shared tooling from the meta
-templates: CLI Taskfile, common tasks, project task stub, golangci
-config, gitignore and license. Add internal/appmeta as the single
-source of version, commit and build date, stamped via ldflags.
+Initialise the Go module (Go 1.27.1) and vendor the shared tooling
+from the meta templates: CLI Taskfile, common tasks, golangci config,
+gitignore and license. Add project tasks to install with a version
+stamped from git describe and to run the pinned govulncheck. Add
+internal/appmeta as the single source of build metadata.
 ```
 
 ---
@@ -2420,7 +2451,7 @@ references. Add a fake op binary and fixture helpers for tests.
 - Test: `internal/config/config_test.go`
 
 **Interfaces:**
-- Produces: `const EnvPrefix = "AGE_PLUGIN_ONEPASSWORD"`, `type Config struct{ Vault, Account, OpPath string; Timeout time.Duration; LogFile string; LogLevel log.Level }`, `Load(path string) (Config, error)`, `DefaultPath() (string, error)`.
+- Produces: `const EnvPrefix = "AGE_PLUGIN_ONEPASSWORD"`, `type Config struct{ Vault, Account, OpPath string; Timeout time.Duration; LogFile string; LogLevel log.Level }`, `Load(path string) (Config, error)`, `DefaultPath() (string, error)`. `OpPath` and `LogFile` are already resolved (absolute, `~/` expanded; `OpPath` may be a bare name).
 
 - [ ] **Step 1: Add dependency**
 
@@ -2438,6 +2469,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -2565,6 +2597,47 @@ func TestLoadErrors(t *testing.T) {
 	}
 }
 
+func TestLoadPaths(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantOp  string
+		wantLog string
+		wantErr bool
+	}{
+		{name: "bare op", env: map[string]string{"OP": "op"}, wantOp: "op"},
+		{name: "absolute op", env: map[string]string{"OP": "/opt/bin/op"}, wantOp: "/opt/bin/op"},
+		{name: "tilde op", env: map[string]string{"OP": "~/bin/op"}, wantOp: "HOME/bin/op"},
+		{name: "tilde log", env: map[string]string{"LOG_FILE": "~/aop.log"}, wantOp: "op", wantLog: "HOME/aop.log"},
+		{name: "relative op", env: map[string]string{"OP": "./op"}, wantErr: true},
+		{name: "relative op dir", env: map[string]string{"OP": "bin/op"}, wantErr: true},
+		{name: "relative log", env: map[string]string{"LOG_FILE": "logs/aop.log"}, wantErr: true},
+		{name: "bare log", env: map[string]string{"LOG_FILE": "aop.log"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolate(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			for k, v := range tt.env {
+				t.Setenv(config.EnvPrefix+"_"+k, v)
+			}
+			got, err := config.Load("")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			wantOp := strings.Replace(tt.wantOp, "HOME", home, 1)
+			wantLog := strings.Replace(tt.wantLog, "HOME", home, 1)
+			if got.OpPath != wantOp || got.LogFile != wantLog {
+				t.Fatalf("op = %q, log = %q; want %q, %q", got.OpPath, got.LogFile, wantOp, wantLog)
+			}
+		})
+	}
+}
+
 func TestDefaultPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
 	if got, _ := config.DefaultPath(); got != "/xdg/age-plugin-onepassword/config.yaml" {
@@ -2660,12 +2733,20 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	opPath, err := resolvePath("op", v.GetString("op"), true)
+	if err != nil {
+		return Config{}, err
+	}
+	logFile, err := resolvePath("log_file", v.GetString("log_file"), false)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		Vault:    v.GetString("vault"),
 		Account:  v.GetString("account"),
-		OpPath:   v.GetString("op"),
+		OpPath:   opPath,
 		Timeout:  timeout,
-		LogFile:  v.GetString("log_file"),
+		LogFile:  logFile,
 		LogLevel: level,
 	}, nil
 }
@@ -2691,6 +2772,26 @@ func readFile(v *viper.Viper, path string) error {
 		return fmt.Errorf("config: read %s: %w", path, err)
 	}
 	return nil
+}
+
+// resolvePath expands a leading "~/" and rejects other relative paths: age runs
+// plugins with the temp dir as working directory, so they would silently
+// resolve there. allowBare permits a bare command name looked up via PATH.
+func resolvePath(key, p string, allowBare bool) (string, error) {
+	if p == "" || filepath.IsAbs(p) {
+		return p, nil
+	}
+	if rest, ok := strings.CutPrefix(p, "~/"); ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("config: %s: %w", key, err)
+		}
+		return filepath.Join(home, rest), nil
+	}
+	if allowBare && !strings.ContainsRune(p, filepath.Separator) {
+		return p, nil
+	}
+	return "", fmt.Errorf("config: %s %q must be absolute or start with ~/", key, p)
 }
 
 func parseLevel(s string) (log.Level, error) {
@@ -2721,9 +2822,10 @@ feat ✨(config): resolve settings from env and XDG config file
 
 age starts plugins without user flags, so vault, account, op path,
 timeout and logging come from AGE_PLUGIN_ONEPASSWORD_* env vars or
-an optional YAML file under XDG_CONFIG_HOME. Env overrides the file;
-invalid timeouts, log levels, malformed files and a missing explicit
-path are errors.
+an optional YAML file under XDG_CONFIG_HOME. Env overrides the file.
+Paths expand ~/ and must otherwise be absolute (age runs plugins in
+the temp dir); op may be a bare command name. Invalid values,
+malformed files and a missing explicit path are errors.
 ```
 
 ---
@@ -2855,16 +2957,42 @@ func run(t *testing.T, c *fake.Client, args ...string) (code int, stdout, stderr
 	return code, out.String(), errb.String()
 }
 
-// identityLine returns the AGE-PLUGIN-… line of an identity file.
-func identityLine(t *testing.T, text string) string {
+// identityLines returns the AGE-PLUGIN-… lines of an identity file.
+func identityLines(t *testing.T, text string) []string {
 	t.Helper()
+	var ids []string
 	for line := range strings.Lines(text) {
 		if strings.HasPrefix(line, "AGE-PLUGIN-ONEPASSWORD-1") {
-			return strings.TrimSpace(line)
+			ids = append(ids, strings.TrimSpace(line))
 		}
 	}
-	t.Fatalf("no identity line in:\n%s", text)
-	return ""
+	if len(ids) == 0 {
+		t.Fatalf("no identity line in:\n%s", text)
+	}
+	return ids
+}
+
+// identityLine returns the only AGE-PLUGIN-… line of an identity file.
+func identityLine(t *testing.T, text string) string {
+	t.Helper()
+	ids := identityLines(t, text)
+	if len(ids) != 1 {
+		t.Fatalf("identity lines = %d, want 1", len(ids))
+	}
+	return ids[0]
+}
+
+func decodePin(t *testing.T, line string) *identity.Pin {
+	t.Helper()
+	_, data, err := ageplugin.ParseIdentity(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := identity.DecodePayload(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pin
 }
 
 func TestDefaultIdentityCommand(t *testing.T) {
@@ -2891,14 +3019,7 @@ func TestPinnedIdentityCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, stderr = %s", code, errOut)
 	}
-	_, data, err := ageplugin.ParseIdentity(identityLine(t, out))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pin, err := identity.DecodePayload(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pin := decodePin(t, identityLine(t, out))
 	if pin.VaultID != "v1" || pin.ItemID != "i1" || !bytes.Equal(pin.PubKey.Marshal(), k.PublicKey.Marshal()) {
 		t.Fatalf("pin = %+v", pin)
 	}
@@ -2909,6 +3030,91 @@ func TestPinnedIdentityCommand(t *testing.T) {
 	}
 	if want := []string{"resolve Private/target", "public v1/i1"}; !slices.Equal(c.Calls(), want) {
 		t.Fatalf("calls = %v, want %v", c.Calls(), want)
+	}
+}
+
+func TestPinnedIdentityMultipleKeys(t *testing.T) {
+	laptop, backup := testutil.Ed25519(t), testutil.RSA(t)
+	c := &fake.Client{Keys: []fake.Key{
+		laptop.FakeKey("v1", "Private", "il", "laptop"),
+		backup.FakeKey("v1", "Private", "ib", "backup"),
+	}}
+	code, out, errOut := run(t, c, "identity", "--key", "op://Private/laptop", "--key", "op://Private/backup")
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errOut)
+	}
+	ids := identityLines(t, out)
+	if len(ids) != 2 || decodePin(t, ids[0]).ItemID != "il" || decodePin(t, ids[1]).ItemID != "ib" {
+		t.Fatalf("identities = %v", ids)
+	}
+	if strings.Count(out, "# age-plugin-onepassword pinned identity file") != 1 ||
+		strings.Count(out, "# Item: ") != 2 {
+		t.Fatalf("unexpected layout:\n%s", out)
+	}
+}
+
+func TestPinnedIdentityAllOrNothing(t *testing.T) {
+	k := testutil.Ed25519(t)
+	c := &fake.Client{Keys: []fake.Key{k.FakeKey("v1", "Private", "i1", "target")}}
+	tests := []struct {
+		name    string
+		keys    []string
+		wantErr string
+	}{
+		{"duplicate item", []string{"op://Private/target", "op://v1/i1"}, "same 1Password item"},
+		{"second missing", []string{"op://Private/target", "op://Private/missing"}, "resolve op://Private/missing"},
+		{"second malformed", []string{"op://Private/target", "Private/x"}, "op://"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "op.id")
+			args := []string{"identity", "-o", path}
+			for _, k := range tt.keys {
+				args = append(args, "--key", k)
+			}
+			code, _, errOut := run(t, c, args...)
+			if code != 1 || !strings.Contains(errOut, tt.wantErr) {
+				t.Fatalf("code = %d, stderr = %s", code, errOut)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("output file written despite error (stat err = %v)", err)
+			}
+		})
+	}
+}
+
+func TestPluginModeLogging(t *testing.T) {
+	tests := []struct {
+		name       string
+		ageDebug   string
+		logFile    bool
+		wantStderr bool
+	}{
+		{name: "silent by default"},
+		{name: "AGEDEBUG=plugin logs to stderr", ageDebug: "plugin", wantStderr: true},
+		{name: "log file only", logFile: true},
+		{name: "both", ageDebug: "plugin", logFile: true, wantStderr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGEDEBUG", tt.ageDebug)
+			logPath := ""
+			if tt.logFile {
+				logPath = filepath.Join(t.TempDir(), "aop.log")
+			}
+			t.Setenv(config.EnvPrefix+"_LOG_FILE", logPath)
+			// recipient-v1 fails fast after logging, without running the protocol.
+			_, _, errOut := run(t, &fake.Client{}, "--age-plugin=recipient-v1")
+			if got := strings.Contains(errOut, "age plugin session"); got != tt.wantStderr {
+				t.Fatalf("debug line on stderr = %v, want %v; stderr:\n%s", got, tt.wantStderr, errOut)
+			}
+			if tt.logFile {
+				b, err := os.ReadFile(logPath)
+				if err != nil || !strings.Contains(string(b), "age plugin failed") {
+					t.Fatalf("log file = %q, err = %v", b, err)
+				}
+			}
+		})
 	}
 }
 
@@ -3138,28 +3344,37 @@ func (a *app) runRoot(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// setup loads config and builds the logger. In plugin mode stderr belongs to
-// the age session, so logs go only to log_file (or nowhere).
+// setup loads config and builds the logger.
+//
+// CLI mode logs to log_file if set, else stderr. In plugin mode age discards
+// plugin stderr unless AGEDEBUG=plugin, so logs go to log_file if set, plus
+// stderr at debug level when AGEDEBUG=plugin, else nowhere.
 func (a *app) setup(pluginMode bool) (config.Config, *log.Logger, func(), error) {
 	cfg, err := config.Load(a.configPath)
 	if err != nil {
 		return config.Config{}, nil, nil, err
 	}
-	if a.debug {
+	ageDebug := pluginMode && os.Getenv("AGEDEBUG") == "plugin"
+	if a.debug || ageDebug {
 		cfg.LogLevel = log.DebugLevel
 	}
-	var w io.Writer = a.opts.Stderr
+	var writers []io.Writer
 	closeLog := func() {}
-	if pluginMode {
-		w = io.Discard
-	}
 	if cfg.LogFile != "" {
 		//nolint:gosec // G304: log path is user configuration.
 		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return config.Config{}, nil, nil, fmt.Errorf("open log file: %w", err)
 		}
-		w, closeLog = f, func() { _ = f.Close() }
+		writers = append(writers, f)
+		closeLog = func() { _ = f.Close() }
+	}
+	if ageDebug || (!pluginMode && cfg.LogFile == "") {
+		writers = append(writers, a.opts.Stderr)
+	}
+	w := io.Discard
+	if len(writers) > 0 {
+		w = io.MultiWriter(writers...)
 	}
 	logger := log.NewWithOptions(w, log.Options{
 		Level:           cfg.LogLevel,
@@ -3232,7 +3447,10 @@ import (
 )
 
 func newIdentityCmd(a *app) *cobra.Command {
-	var key, output string
+	var (
+		keys   []string
+		output string
+	)
 	cmd := &cobra.Command{
 		Use:   "identity",
 		Short: "Write an age identity file (contains no key material)",
@@ -3240,30 +3458,35 @@ func newIdentityCmd(a *app) *cobra.Command {
 matching the file in 1Password. Equivalent to "age -d -j onepassword"; makes no 1Password calls.
 
 With --key "op://<vault>/<item>", writes a pinned identity for exactly that SSH Key item.
-Decrypting then needs a single 1Password call. Reads only the public key.`,
+Decrypting then needs a single 1Password call. Repeat --key for several keys in one file.
+Reads only public keys. Nothing is written unless every key resolves.`,
 		Example: `  age-plugin-onepassword identity -o ~/.config/chezmoi/op.id
-  age-plugin-onepassword identity --key "op://Private/chezmoi-age" -o op.id`,
+  age-plugin-onepassword identity --key "op://Private/chezmoi-age" -o op.id
+  age-plugin-onepassword identity --key "op://Private/laptop" --key "op://Private/backup" -o op.id`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			text := defaultIdentityText()
-			if key != "" {
+			if len(keys) > 0 {
 				var err error
-				if text, err = a.pinnedIdentityText(cmd.Context(), key); err != nil {
+				if text, err = a.pinnedIdentitiesText(cmd.Context(), keys); err != nil {
 					return err
 				}
 			}
 			return writeOutput(output, a.opts.Stdout, text)
 		},
 	}
-	cmd.Flags().StringVar(&key, "key", "", `pin to the SSH Key item at "op://<vault>/<item>"`)
+	cmd.Flags().StringArrayVar(&keys, "key", nil, `pin to the SSH Key item at "op://<vault>/<item>" (repeatable)`)
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write to FILE (must not exist) instead of stdout")
 	return cmd
 }
 
-func (a *app) pinnedIdentityText(ctx context.Context, ref string) (string, error) {
-	vault, item, err := onepassword.ParseItemRef(ref)
-	if err != nil {
-		return "", err
+// pinnedIdentitiesText builds a pinned identity file for refs. All refs are
+// validated and resolved before anything is returned (all or nothing).
+func (a *app) pinnedIdentitiesText(ctx context.Context, refs []string) (string, error) {
+	for _, ref := range refs {
+		if _, _, err := onepassword.ParseItemRef(ref); err != nil {
+			return "", err
+		}
 	}
 	cfg, logger, closeLog, err := a.setup(false)
 	if err != nil {
@@ -3271,24 +3494,49 @@ func (a *app) pinnedIdentityText(ctx context.Context, ref string) (string, error
 	}
 	defer closeLog()
 	client := a.opts.NewClient(cfg, logger)
+
+	var b strings.Builder
+	b.WriteString("# age-plugin-onepassword pinned identity file (contains no key material)\n")
+	seen := make(map[string]string) // vaultID/itemID -> first ref
+	for _, ref := range refs {
+		block, id, err := pinnedBlock(ctx, client, ref)
+		if err != nil {
+			return "", err
+		}
+		if prev, dup := seen[id]; dup {
+			return "", fmt.Errorf("%s and %s are the same 1Password item", prev, ref)
+		}
+		seen[id] = ref
+		b.WriteString("\n")
+		b.WriteString(block)
+	}
+	return b.String(), nil
+}
+
+// pinnedBlock resolves ref and returns its identity block and "vaultID/itemID".
+func pinnedBlock(ctx context.Context, client onepassword.Client, ref string) (block, id string, err error) {
+	vault, item, err := onepassword.ParseItemRef(ref)
+	if err != nil {
+		return "", "", err
+	}
 	it, err := client.ResolveSSHKey(ctx, vault, item)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", ref, err)
+		return "", "", fmt.Errorf("resolve %s: %w", ref, err)
 	}
 	raw, err := client.PublicKey(ctx, it.VaultID, it.ID)
 	if err != nil {
-		return "", fmt.Errorf("read public key of %s: %w", ref, err)
+		return "", "", fmt.Errorf("read public key of %s: %w", ref, err)
 	}
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse public key of %s: %w", ref, err)
+		return "", "", fmt.Errorf("parse public key of %s: %w", ref, err)
 	}
 	enc, err := identity.EncodePinned(identity.Pin{VaultID: it.VaultID, ItemID: it.ID, PubKey: pub})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fmt.Sprintf("# age-plugin-onepassword pinned identity (contains no key material)\n"+
-		"# Item: %s/%s\n# Recipient: %s\n%s\n", it.VaultName, it.Title, authorizedKey(pub), enc), nil
+	block = fmt.Sprintf("# Item: %s/%s\n# Recipient: %s\n%s\n", it.VaultName, it.Title, authorizedKey(pub), enc)
+	return block, it.VaultID + "/" + it.ID, nil
 }
 
 func defaultIdentityText() string {
@@ -3458,9 +3706,10 @@ feat ✨(cli): add identity, recipients, version and plugin mode
 
 Wire the age identity-v1 state machine to the 1Password-backed
 decoder when age passes --age-plugin. Add the identity command for
-default and pinned identity files (O_EXCL, 0600), recipients with
-text and JSON output (public keys only), and version. In plugin mode
-logs go only to the configured log file.
+default and pinned identity files (repeatable --key, all or nothing,
+O_EXCL, 0600), recipients with text and JSON output (public keys
+only), and version. Plugin-mode logs go to the log file and, with
+AGEDEBUG=plugin, to stderr at debug level.
 ```
 
 ---
@@ -3584,7 +3833,8 @@ func baseEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "AGE_PLUGIN_ONEPASSWORD_") || strings.HasPrefix(kv, "FAKEOP_") ||
-			strings.HasPrefix(kv, "PATH=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") {
+			strings.HasPrefix(kv, "PATH=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") ||
+			strings.HasPrefix(kv, "AGEDEBUG=") {
 			continue
 		}
 		env = append(env, kv)
@@ -3676,11 +3926,15 @@ An [age](https://age-encryption.org) plugin that decrypts files encrypted to SSH
 
 ## Install
 
+Requires Go 1.27.1 and [Task](https://taskfile.dev).
+
 ```sh
-go install github.com/untcha/age-plugin-onepassword/cmd/age-plugin-onepassword@latest
+git clone https://github.com/untcha/age-plugin-onepassword
+cd age-plugin-onepassword
+task project:install   # builds with the version from git describe, installs to ~/.local/bin
 ```
 
-The binary must be on `PATH` so age can find it.
+`~/.local/bin` must be on `PATH` so age can find the plugin.
 
 ## Usage
 
@@ -3713,9 +3967,12 @@ age-plugin-onepassword identity -o ~/.config/age/op.id
 
 # Pinned identity: exactly one item, one 1Password call per decrypt.
 age-plugin-onepassword identity --key "op://Private/chezmoi-age" -o ~/.config/age/op.id
+
+# Several pinned keys in one file (e.g. laptop + backup).
+age-plugin-onepassword identity --key "op://Private/laptop" --key "op://Private/backup" -o ~/.config/age/op.id
 ```
 
-Neither contains key material. A pinned identity survives the item being moved or recreated
+Neither contains key material. `-o` never overwrites an existing file. A pinned identity survives the item being moved or recreated
 (it falls back to a fingerprint search and logs a warning to regenerate it).
 
 ## How it finds the key
@@ -3741,9 +3998,23 @@ age starts the plugin without user flags, so settings come from env vars or
 
 ```yaml
 vault: Private
-log_file: /Users/you/.local/state/age-plugin-onepassword.log  # absolute path, ~ is not expanded
+log_file: ~/.local/state/age-plugin-onepassword.log
 log_level: debug
 ```
+
+Paths (`op`, `log_file`) must be absolute or start with `~/`; `op` may also be a bare command
+name found via `PATH`. Other relative paths are rejected, because age runs plugins with the
+temp directory as working directory.
+
+## Debugging
+
+```sh
+AGEDEBUG=plugin age -d -j onepassword secret.age
+```
+
+age then shows the plugin's debug logs on stderr. Note: age itself also prints the whole plugin
+protocol exchange, **including the decrypted file key** — use it only with test files.
+Alternatively set `log_file` (and `log_level: debug`) to log to a file.
 
 ## chezmoi
 
@@ -3770,6 +4041,7 @@ Create the identity with `age-plugin-onepassword identity [--key op://…] -o ~/
 ```sh
 task check             # fmt, lint, tests
 task test:integration  # round trip through the real age CLI with a fake op
+task project:vuln      # govulncheck (pinned)
 task build
 ```
 
@@ -3798,7 +4070,7 @@ Check:
 - [ ] **Step 3: Manual round trip (user runs)**
 
 ```sh
-task dev:install
+task project:install
 op item create --category ssh --title age-test --vault Private --ssh-generate-key ed25519
 echo hi | age -r "$(op read 'op://Private/age-test/public key')" -o /tmp/t.age
 AGE_PLUGIN_ONEPASSWORD_LOG_FILE=/tmp/aop.log AGE_PLUGIN_ONEPASSWORD_LOG_LEVEL=debug age -d -j onepassword /tmp/t.age
@@ -3812,7 +4084,7 @@ Expected: `hi` twice; one 1Password approval prompt; the log names only `age-tes
 
 - [ ] **Step 4: Final verification**
 
-Run: `task check && task test:integration && task build:all`
+Run: `task check && task test:integration && task project:vuln && task build:all`
 Expected: all green; binaries for linux/amd64, darwin/arm64, darwin/amd64 under `bin/`.
 
 - [ ] **Step 5: Propose commit**
@@ -3820,8 +4092,9 @@ Expected: all green; binaries for linux/amd64, darwin/arm64, darwin/amd64 under 
 ```
 docs 📚(readme): document usage, configuration and security
 
-Describe install, encrypting with SSH recipients, decrypting via
--j onepassword and identity files, how tag matching avoids reading
-unrelated keys, env and config file settings, a chezmoi example,
-security notes and development tasks.
+Describe install via task project:install, encrypting with SSH
+recipients, decrypting via -j onepassword and default or pinned
+identity files, how tag matching avoids reading unrelated keys, env
+and config settings incl. path rules, debugging with AGEDEBUG=plugin,
+a chezmoi example, security notes and development tasks.
 ```

@@ -62,20 +62,22 @@ internal/identity/                  # age.Identity implementations, no `op` know
     default.go       # DefaultIdentity
     pinned.go        # PinnedIdentity
 internal/plugin/                    # identity-v1 wiring to filippo.io/age/plugin
-e2e/                                # //go:build e2e — real age round trip
-testdata/                           # fixture keys (ssh-keygen), op JSON fixtures
+internal/testutil/                  # test-only: key generation, fake op fixtures
+e2e/                                # //go:build integration — real age round trip
 taskfiles/common.yml                # vendored from untcha/meta
-taskfiles/Taskfile.project.yml      # project tasks (test:e2e)
+taskfiles/Taskfile.project.yml      # project tasks (install, vuln)
 Taskfile.yml                        # from meta cli template, include ./taskfiles/common.yml
 ```
 
 Dependency direction: `cli → plugin → identity → onepassword` (interface only).
 `config`, `appmeta` are leaves. No cycles.
 
+Go: `go 1.27.1` in `go.mod` (the local toolchain is selected from it).
+
 Dependencies (latest stable at implementation time, pinned in `go.mod`):
 `filippo.io/age` (v1.3.x), `golang.org/x/crypto`, `github.com/spf13/cobra`,
-`github.com/spf13/viper`, `github.com/charmbracelet/log`. The `age` CLI is
-pinned as a Go `tool` dependency for e2e tests. No fang.
+`github.com/spf13/viper`, `github.com/charmbracelet/log`. Pinned Go `tool`
+dependencies: the `age` CLI (e2e tests) and `govulncheck`. No fang.
 
 ## 5. 1Password boundary (`internal/onepassword`)
 
@@ -189,7 +191,7 @@ config key. Not built now.
 
 ```sh
 age-plugin-onepassword identity [-o FILE]                    # default identity
-age-plugin-onepassword identity --key "op://V/I" [-o FILE]   # pinned identity
+age-plugin-onepassword identity --key "op://V/I" [--key …] [-o FILE]  # pinned identity/identities
 age-plugin-onepassword recipients [--json]                   # SSH pubkeys in 1Password
 age-plugin-onepassword version
 age-plugin-onepassword --age-plugin=identity-v1              # hidden; called by age
@@ -205,9 +207,24 @@ Global flags: `--debug` (= `log_level=debug`), `--config FILE`.
   AGE-PLUGIN-ONEPASSWORD-1…
   ```
 
-- `identity --key`: `ResolveSSHKey` + `PublicKey`; never reads the private key.
-  Output header adds `# Item: <vault>/<title>` and `# Recipient: ssh-… …`.
-  `--key` must match `op://<vault>/<item>` (exactly two non-empty segments).
+- `identity --key`: `ResolveSSHKey` + `PublicKey` per key; never reads a
+  private key. `--key` is repeatable; each must match `op://<vault>/<item>`
+  (exactly two non-empty segments). Output: one shared header line, then per
+  key a block `# Item: <vault>/<title>`, `# Recipient: ssh-… …` and its
+  identity line. Two refs resolving to the same item are an error. Any failure
+  aborts before anything is written (all or nothing).
+
+  ```text
+  # age-plugin-onepassword pinned identity file (contains no key material)
+
+  # Item: Private/laptop
+  # Recipient: ssh-ed25519 AAAA…
+  AGE-PLUGIN-ONEPASSWORD-1…
+
+  # Item: Private/backup
+  # Recipient: ssh-ed25519 AAAA…
+  AGE-PLUGIN-ONEPASSWORD-1…
+  ```
 - `-o FILE`: `O_WRONLY|O_CREATE|O_EXCL`, mode `0600`; `-` or unset → stdout.
 - `recipients`: `ListSSHKeys` + `PublicKey` per item. Text:
   `op://<vault name>/<item title>: ssh-ed25519 AAAA…`, sorted by vault then
@@ -234,12 +251,20 @@ settings come from env vars or the config file — never flags.
   (fallback `~/.config/…`), or `--config`. Missing file is fine; malformed file
   or unknown `log_level` / invalid `timeout` is an error.
 - Precedence: flag > env > file > default.
+- Paths: age starts the plugin with the system temp dir as working directory,
+  so relative paths would silently resolve there. `log_file` and `op` expand a
+  leading `~/`; `op` may be a bare command name (looked up via `PATH`); any
+  other relative path is an error.
 
 ## 10. Logging
 
 - `charmbracelet/log`, structured key/value.
-- CLI mode: stderr. Plugin mode: `log_file` if set (append, create, `0600`),
-  else discarded — stderr belongs to the age protocol session.
+- CLI mode: stderr, or `log_file` if set.
+- Plugin mode: `log_file` if set (append, create, `0600`). Additionally, when
+  `AGEDEBUG=plugin` is set (age then forwards plugin stderr), logs go to
+  stderr at debug level. Both set → both destinations. Neither → discarded.
+  Note: with `AGEDEBUG=plugin` age itself prints the protocol, including the
+  file key — documented in the README.
 - Never logged: private keys, `op read` output. Logged: item title, vault ID,
   tags, `op` subcommand, durations, errors.
 
@@ -261,7 +286,7 @@ Table-driven unit tests:
 | Tag | `TagFromFingerprint` equals age tag for ed25519 + RSA fixtures; rejects missing prefix, bad base64, wrong length |
 | StanzaTags | ssh-ed25519 / ssh-rsa tags collected; X25519, grease, empty args ignored |
 | Encoding | default string round trip; pinned v1 round trip; rejects bad version, trailing bytes, oversized fields, unsupported key type |
-| Config | precedence, defaults, invalid values |
+| Config | precedence, defaults, invalid values, path rules (`~/` expansion, bare `op`, relative rejected) |
 
 `identity` tests with `onepassword/fake` (records calls):
 
@@ -284,13 +309,15 @@ Table-driven unit tests:
 construction (`--vault`, `--account`, refs), stderr surfaced in error,
 `ErrNotFound` mapping, JSON decode incl. malformed items, timeout.
 
-E2E (`go test -tags e2e ./e2e/...`, `task test:e2e`): builds the plugin,
+E2E (`//go:build integration`, `task test:integration` from common.yml): builds the plugin,
 `fakeop` and the pinned `age` tool into a temp dir on `PATH`; runs
 `age -r <fixture pub> | age -d -j onepassword` and with a pinned identity
 file; asserts plaintext and fake-op call log.
 
-Fixture keys generated once with `ssh-keygen -t ed25519` / `-t rsa -b 3072`,
-committed under `testdata/`, clearly marked test-only.
+Test SSH keys (Ed25519, RSA 2048) are generated at test time by
+`internal/testutil`; no key files are committed. Unit test names must not
+start with `TestI` (common.yml `test:unit` filter); integration tests are
+`TestIntegration*`.
 
 Manual check with real 1Password (documented in README): scratch vault item,
 one approval prompt, debug log names only that item, locked app → clear error.
@@ -299,11 +326,17 @@ one approval prompt, debug log names only that item, locked app → clear error.
 
 - `Taskfile.yml` from `untcha/meta` `taskfiles/cli`, vars set (`REPO`,
   `APP_NAME`), include path `./taskfiles/common.yml`, `CGO_ENABLED=0`.
-- `taskfiles/Taskfile.project.yml`: `test:e2e`.
-- `.golangci.yml`, `.gitignore`, `LICENSE` from `untcha/meta`.
-- `README.md`: install (`go install …@vX`), usage (encrypt, `-j onepassword`,
-  default + pinned identity files), config table, chezmoi example, security
-  notes.
+- `taskfiles/Taskfile.project.yml`:
+  - `install`: `VERSION=$(git describe --tags --always --dirty) task install`
+    (stamps the version; templates stay unchanged).
+  - `vuln`: runs the pinned `govulncheck` tool on `./...` (manual, pre-release).
+- `.golangci.yml`, `.gitignore`, `LICENSE` from `untcha/meta`. `.envrc` is not
+  committed.
+- No CI. No Windows target (template `RELEASE_TARGETS`).
+- Install: clone + `task project:install` (binary in `~/.local/bin`).
+- `README.md`: install, usage (encrypt, `-j onepassword`, default + pinned
+  identity files), config table incl. path rules, debugging with
+  `AGEDEBUG=plugin`, chezmoi example, security notes.
 
 ## 14. Risks / open checks during implementation
 
