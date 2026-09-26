@@ -2,7 +2,9 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -251,6 +253,58 @@ func TestRecipientsCommand(t *testing.T) {
 	if len(got) != 2 || got[0]["vault"] != "Private" || got[0]["item_id"] != "ip" ||
 		got[1]["public_key"] != work.AuthorizedKey {
 		t.Fatalf("json = %v", got)
+	}
+}
+
+// cancelingClient lists one SSH key, then cancels ctx before PublicKey fails,
+// simulating a Ctrl-C/timeout landing mid-loop.
+type cancelingClient struct {
+	cancel context.CancelFunc
+	item   onepassword.SSHKeyItem
+}
+
+func (c cancelingClient) ListSSHKeys(context.Context) ([]onepassword.SSHKeyItem, error) {
+	return []onepassword.SSHKeyItem{c.item}, nil
+}
+
+func (c cancelingClient) ResolveSSHKey(context.Context, string, string) (onepassword.SSHKeyItem, error) {
+	return onepassword.SSHKeyItem{}, errors.New("not used")
+}
+
+func (c cancelingClient) PublicKey(context.Context, string, string) ([]byte, error) {
+	c.cancel()
+	return nil, errors.New("op read: interrupted")
+}
+
+func (c cancelingClient) PrivateKey(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("not used")
+}
+
+// TestRecipientsContextCancelled covers F4: a cancelled context must abort
+// "recipients" with an error, not silently print a partial list and exit 0.
+func TestRecipientsContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := cancelingClient{cancel: cancel, item: onepassword.SSHKeyItem{ID: "i1", VaultID: "v1", Title: "target"}}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var out, errb bytes.Buffer
+	code := cli.Execute(ctx, []string{"recipients"}, cli.Options{
+		Stdin:  strings.NewReader(""),
+		Stdout: &out,
+		Stderr: &errb,
+		NewClient: func(config.Config, *log.Logger) onepassword.Client {
+			return c
+		},
+	})
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stdout = %q, stderr = %q", code, out.String(), errb.String())
+	}
+	if !strings.Contains(errb.String(), "context canceled") {
+		t.Fatalf("stderr = %q, want mention of context canceled", errb.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout = %q, want no partial output", out.String())
 	}
 }
 
