@@ -1,0 +1,187 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+# Source: https://github.com/untcha/meta (taskfiles/cli/Taskfile.yml)
+# Taskfile for Go CLI tools (produces a versioned, build-stamped binary).
+# Shared Go tasks (fmt, lint, deps, test:*, coverage, clean:caches/coverage) live
+# in taskfiles/common.yml and are flattened into this namespace. This file adds the
+# binary build, cross-compilation, and dev-install tasks.
+# For libraries use taskfiles/library/Taskfile.yml; for AWS Lambdas use taskfiles/lambda/Taskfile.yml.
+
+includes:
+  # Shared tasks, flattened so they appear unprefixed (e.g. `task lint`).
+  #
+  # The path is relative to the DESTINATION repo root, where this file becomes
+  # Taskfile.yml beside a vendored taskfiles/common.yml. It therefore does not
+  # resolve here in the templates directory, and that is deliberate: making it
+  # ../common.yml would work here and silently escape every consuming repo.
+  common:
+    taskfile: ./taskfiles/common.yml
+    flatten: true
+
+  # Repo-specific tasks live here and are namespaced (e.g. `task project:update:schema`).
+  # optional:true keeps this generic Taskfile usable in repos without a project file.
+  # Keep the file at that path: because the include is optional, a mismatch is
+  # silent — the tasks simply never appear and `task` still exits 0.
+  project:
+    taskfile: ./taskfiles/Taskfile.project.yml
+    optional: true
+
+vars:
+  META_TYPE: cli
+
+  # Metadata variables for the project, used in build and module paths
+  OWNER: untcha # GitHub owner/org for the project, used in module paths and metadata
+  REPO: age-plugin-onepassword # GitHub repository name, used in module paths and metadata
+  APP_NAME: age-plugin-onepassword # Name of the application
+  BIN_NAME: "{{.APP_NAME}}" # Name of the binary, if different from the app name
+
+  # GOOS and GOARCH are determined dynamically using `go env`
+  # but can be overridden by setting TARGET_OS and TARGET_ARCH environment variables.
+  GOOS:
+    sh: go env GOOS
+  GOARCH:
+    sh: go env GOARCH
+
+  # TARGET_OS and TARGET_ARCH can be set to override the default GOOS and GOARCH values.
+  TARGET_OS: "{{default .GOOS .TARGET_OS}}"
+  TARGET_ARCH: "{{default .GOARCH .TARGET_ARCH}}"
+
+  CGO: CGO_ENABLED=0
+  GOHOST: "GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}}"
+
+  BIN_DIR: "bin/{{.TARGET_OS}}-{{.TARGET_ARCH}}"
+  BIN_PATH: "{{.BIN_DIR}}/{{.BIN_NAME}}"
+
+  # RELEASE_TARGETS is the OS/ARCH matrix that `build:all` cross-compiles.
+  # Whitespace-separated "os/arch" tokens (Task splits the list on whitespace).
+  RELEASE_TARGETS: "linux/amd64 darwin/arm64 darwin/amd64"
+
+  # APPMETA_DIR is the package whose vars get stamped with version/commit/date.
+  # Build stamping only happens when this directory exists (see LDFLAGS).
+  APPMETA_DIR: internal/appmeta
+  MODULE_PATH:
+    sh: go list -m
+  APPMETA_MODULE_PATH: "{{.MODULE_PATH}}/{{.APPMETA_DIR}}"
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
+  BUILD_DATE:
+    sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
+
+  # LDFLAGS stamps version metadata into {{.APPMETA_DIR}} when that package
+  # exists; otherwise it falls back to plain strip flags so projects without
+  # an appmeta package build cleanly.
+  LDFLAGS:
+    sh: |
+      if [ ! -d "{{.APPMETA_DIR}}" ]; then
+        echo "-s -w"
+        exit 0
+      fi
+      VERSION_VALUE="${VERSION:-dev}"
+      COMMIT_VALUE="${COMMIT:-{{.GIT_COMMIT}}}"
+      BUILD_DATE_VALUE="${BUILD_DATE:-{{.BUILD_DATE}}}"
+      echo "-s -w \
+      -X {{.APPMETA_MODULE_PATH}}.Version=${VERSION_VALUE} \
+      -X {{.APPMETA_MODULE_PATH}}.Commit=${COMMIT_VALUE} \
+      -X {{.APPMETA_MODULE_PATH}}.BuildDate=${BUILD_DATE_VALUE}"
+
+  # LOCAL_BIN is the directory where the binary will be installed for development purposes
+  LOCAL_BIN: $HOME/.local/bin
+
+tasks:
+  build:
+    desc: Build the binary for the target OS/ARCH
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - "{{.CGO}} {{.GOHOST}} go build -a -trimpath -ldflags='{{.LDFLAGS}}' -o {{.BIN_PATH}} cmd/{{.APP_NAME}}/main.go"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BIN_PATH}}"
+
+  build:all:
+    desc: Build the binary for all release targets ({{.RELEASE_TARGETS}})
+    summary: |
+      Cross-compiles `build` once per entry in RELEASE_TARGETS, leaving each
+      artifact in its own bin/<os>-<arch>/ directory.
+
+      The target is handed over as TARGET_OS/TARGET_ARCH environment variables
+      because the vars above read `{{`{{default .GOOS .TARGET_OS}}`}}`, so an
+      env override wins over the host defaults without duplicating the build
+      command per platform.
+    cmds:
+      - for: { var: RELEASE_TARGETS }
+        cmd: >-
+          TARGET_OS={{.ITEM | splitList "/" | first}}
+          TARGET_ARCH={{.ITEM | splitList "/" | last}}
+          task build
+
+  build:check:
+    desc: Run checks, then build the binary
+    cmds:
+      - task: check
+      - task: build
+
+  check:
+    desc: Run all checks (formatting, linting, tests)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test:existing
+
+  clean:
+    desc: Clean temp files and folders
+    cmds:
+      - rm -rf ./dist/
+      - rm -rf ./bin/
+
+  clean:all:
+    desc: Clean everything (builds, caches, coverage)
+    cmds:
+      - task: clean
+      - task: clean:caches
+      - task: clean:coverage
+
+  dev:install:
+    desc: Install the binary in {{.LOCAL_BIN}} for development
+    cmds:
+      - task: clean
+      - task: build
+      - mkdir -p {{.LOCAL_BIN}}
+      # Install atomically instead of with a plain `cp`. `cp` opens the
+      # destination with O_TRUNC and writes into the EXISTING inode, so a copy
+      # of this binary that happens to be running has its mapped pages changed
+      # underneath it and dies on the next page fault — which for a daemon also
+      # means its deferred cleanup (pid files, sockets) never runs. Copying
+      # beside the target and renaming over it binds the name to a new inode and
+      # leaves the old one alive for whoever still has it open. Both paths are
+      # in LOCAL_BIN, so `mv` is a rename(2) and therefore atomic.
+      #
+      # Chained with && so the rename cannot run on a failed copy. An install
+      # interrupted between the two still leaves a `.new` file behind, which is
+      # why `dev:clean` removes that too.
+      - cmd: >-
+          cp {{.BIN_PATH}} {{.LOCAL_BIN}}/{{.BIN_NAME}}.new &&
+          mv -f {{.LOCAL_BIN}}/{{.BIN_NAME}}.new {{.LOCAL_BIN}}/{{.BIN_NAME}}
+      - echo "Installed '{{.BIN_NAME}}' to '{{.LOCAL_BIN}}/'"
+      - echo "Make sure '{{.LOCAL_BIN}}' is in your PATH"
+
+  install:
+    desc: Alias for dev:install
+    cmds:
+      - task: dev:install
+
+  dev:clean:
+    desc: Clean the development installation
+    cmds:
+      - rm -f {{.LOCAL_BIN}}/{{.BIN_NAME}}
+      # Also drop a stray `.new` left by an install interrupted between the
+      # copy and the rename (see dev:install).
+      - rm -f {{.LOCAL_BIN}}/{{.BIN_NAME}}.new
+    preconditions:
+      # Either file counts as something to clean, so a leftover `.new` can be
+      # removed even when no binary is installed.
+      - sh: test -f {{.LOCAL_BIN}}/{{.BIN_NAME}} || test -f {{.LOCAL_BIN}}/{{.BIN_NAME}}.new
+        msg: "'{{.BIN_NAME}}' not found in '{{.LOCAL_BIN}}'. Nothing to clean."

@@ -1,0 +1,91 @@
+# Defines the configuration version.
+# The only possible value is "2".
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  # Default set of linters.
+  # The value can be:
+  # - `standard`: https://golangci-lint.run/docs/linters/#enabled-by-default
+  # - `all`: enables all linters by default.
+  # - `none`: disables all linters by default.
+  # - `fast`: enables only linters considered as "fast" (`golangci-lint help linters --json | jq '[ .[] | select(.fast==true) ] | map(.name)'`).
+  # Default: standard
+  default: none
+
+  # Enable specific linter.
+  enable:
+    - errcheck # default
+    - funcorder
+    - gocritic
+    - gosec
+    - govet # default
+    - ineffassign # default
+    - modernize
+    - revive
+    - staticcheck # default
+    - unused # default
+
+  settings:
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+        - name: exported
+          disabled: true
+
+  # Issue exclusions applied on top of the enabled linters.
+  # See https://golangci-lint.run/docs/configuration/file/
+  # Default: [] (no exclusions)
+  exclusions:
+    # `std-error-handling` drops errcheck reports for standard-library calls
+    # whose returned error is idiomatically ignored, so the common Go
+    # patterns below don't need a `//nolint` comment in every project:
+    #   - defer f.Close() / defer resp.Body.Close()  (io.Closer)
+    #   - os.Setenv
+    #   - fmt.Fprint* (typically to stdout/stderr)
+    #
+    # It does NOT hide genuine unchecked errors — an ignored strconv.Atoi is
+    # still reported. Verified with a probe of five ignored errors: the four
+    # idiomatic ones were silenced, the real one was not.
+    #
+    # Caveat: the preset is slightly broader than closing. An unchecked
+    # fmt.Fprintf to a file or network connection you care about is a real
+    # error and is silenced too. A project needing that strictness can drop
+    # the preset and list only what it wants instead:
+    #
+    #     settings:
+    #         errcheck:
+    #             exclude-functions:
+    #                 - (io.Closer).Close
+    presets:
+      - std-error-handling
+    #
+    # `rules` narrows individual linters to part of the tree. The usual case is
+    # a project-specific linter that is deliberately unenforced in tests — e.g.
+    # a forbidigo rule guarding a secret-revealing accessor, which the tests for
+    # that accessor must obviously be allowed to call:
+    #
+    #     rules:
+    #         - path: _test\.go
+    #           linters:
+    #               - forbidigo
+    #
+    # Left commented out because it names a linter this base config does not
+    # enable; uncomment and adapt in the repo that needs it.
+
+formatters:
+  # Enable specific formatter.
+  # Default: [] (uses standard Go formatting)
+  enable:
+    - gofmt
+    - goimports
+    - golines
+
+  settings:
+    golines:
+      max-len: 120
