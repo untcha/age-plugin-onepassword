@@ -1,0 +1,188 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+# Source: https://github.com/untcha/meta (taskfiles/common.yml)
+# Shared Go tasks common to ALL project types (CLI, library, lambda).
+# This file is not used directly; each project-type Taskfile includes it with
+# `flatten: true`, so these tasks appear unprefixed (e.g. `task lint`, not
+# `task common:lint`). Put type-specific tasks (build, check, clean, install,
+# package, deploy, ...) in the including Taskfile instead.
+
+vars:
+  # GO_LIST_TEST_FILTER is a Go template used to filter packages that contain
+  # test files (either regular test files or external test files).
+  GO_LIST_TEST_FILTER: "{{`{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}`}}"
+
+  # Test coverage variables
+  COVERAGE_DIR: coverage
+  COVERAGE_FILE: "{{.COVERAGE_DIR}}/coverage.out"
+  COVERAGE_HTML: "{{.COVERAGE_DIR}}/coverage.html"
+
+tasks:
+  default:
+    desc: Default task - show available tasks
+    cmds:
+      - task --list-all
+    silent: true
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  lint:verbose:
+    desc: Run golangci-lint with verbose output
+    cmds:
+      - golangci-lint run -v
+
+  lint:fmt:
+    desc: Run golangci-lint formatter
+    cmds:
+      - golangci-lint fmt
+
+  deps:
+    desc: Download and verify dependencies
+    cmds:
+      - go mod download
+      - go mod verify
+      - go mod tidy
+
+  deps:tidy:
+    desc: Tidy dependencies (go.mod/go.sum)
+    cmds:
+      - go mod tidy
+
+  deps:update:
+    desc: Update dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  test:fresh:
+    desc: "Run Go tests with fresh cache"
+    cmds:
+      - go test -count=1 ./...
+
+  test:verbose:
+    desc: Run Go tests with verbose output and race detector
+    cmds:
+      - go test -v -race ./...
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  test:existing:
+    desc: Run tests in packages containing test files only
+    summary: |
+      This task lists all packages that contain test files and runs tests only in those packages.
+      This helps to avoid cluttering the output with "[no test files]" messages from packages without tests.
+
+      It also considers both test files in the same package and external test files (XTestGoFiles).
+      e.g. a package with `package foo` and `foo_test.go` with `package foo_test`.
+    cmds:
+      - go list -f '{{.GO_LIST_TEST_FILTER}}' ./... | xargs -r go test
+
+  test:existing:verbose:
+    desc: Run tests in packages containing test files only with verbose output and race detector
+    summary: |
+      This task lists all packages that contain test files and runs tests only in those packages.
+      This helps to avoid cluttering the output with "[no test files]" messages from packages without tests.
+
+      It also considers both test files in the same package and external test files (XTestGoFiles).
+      e.g. a package with `package foo` and `foo_test.go` with `package foo_test`.
+    cmds:
+      - go list -f '{{.GO_LIST_TEST_FILTER}}' ./... | xargs -r go test -v -race
+
+  test:quick:
+    desc: Run quick tests only (skip long-running tests)
+    cmds:
+      - go list -f '{{.GO_LIST_TEST_FILTER}}' ./... | xargs -r go test -short
+
+  test:integration:
+    desc: "Run integration tests only"
+    cmds:
+      - go list -tags=integration -f '{{.GO_LIST_TEST_FILTER}}' ./... | xargs -r go test -tags=integration -run Integration -v
+
+  test:unit:
+    desc: "Run unit tests only (excluding integration)"
+    cmds:
+      - go list -f '{{.GO_LIST_TEST_FILTER}}' ./... | xargs -r go test -run '^Test[^I]*$' -v
+
+  test:race:
+    desc: Run tests with race detection
+    cmds:
+      - go test -race -v ./...
+
+  test:benchmark:
+    desc: Run benchmark tests
+    cmds:
+      - go test -bench=. -benchmem ./...
+
+  test:coverage:
+    desc: Run tests with coverage
+    cmds:
+      - mkdir -p {{.COVERAGE_DIR}}
+      - go test -coverprofile={{.COVERAGE_FILE}} -covermode=atomic ./...
+      - go tool cover -html={{.COVERAGE_FILE}} -o {{.COVERAGE_HTML}}
+      - echo "Coverage report generated at {{.COVERAGE_HTML}}"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.COVERAGE_FILE}}"
+      - "{{.COVERAGE_HTML}}"
+
+  test:coverage:show:
+    desc: Show test coverage in browser
+    deps: [test:coverage]
+    cmds:
+      - cmd: open {{.COVERAGE_HTML}}
+        platforms: [darwin]
+      - cmd: xdg-open {{.COVERAGE_HTML}}
+        platforms: [linux]
+      - cmd: start {{.COVERAGE_HTML}}
+        platforms: [windows]
+
+  test:watch:
+    desc: Watch for changes and run tests automatically
+    deps: [test]
+    watch: true
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    cmds:
+      - task: test:existing
+
+  clean:caches:
+    desc: Clean Go build and test caches
+    cmds:
+      - go clean -cache
+      - go clean -testcache
+      - echo "Cleared Go build and test caches"
+
+  clean:coverage:
+    desc: Clean coverage files
+    cmds:
+      - rm -rf {{.COVERAGE_DIR}}
