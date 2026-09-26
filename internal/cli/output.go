@@ -19,7 +19,12 @@ func writeOutput(path string, stdout io.Writer, text string) error {
 	}
 	if _, err := io.WriteString(f, text); err != nil {
 		_ = f.Close()
+		_ = os.Remove(path) // all-or-nothing: don't leave a partial file, and unblock a retry.
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return nil
 }
