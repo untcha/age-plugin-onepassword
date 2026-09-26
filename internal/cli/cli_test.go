@@ -187,11 +187,13 @@ func TestPluginModeLogging(t *testing.T) {
 			if got := strings.Contains(errOut, "age plugin session"); got != tt.wantStderr {
 				t.Fatalf("debug line on stderr = %v, want %v; stderr:\n%s", got, tt.wantStderr, errOut)
 			}
+			// F6: the error is printed once by Execute; the logger must never repeat it.
+			if n := strings.Count(errOut, "unsupported age plugin state machine"); n != 1 {
+				t.Fatalf("error printed %d times, want 1; stderr:\n%s", n, errOut)
+			}
 			if tt.logFile {
-				//nolint:gosec // G304: logPath is built from t.TempDir() in this test.
-				b, err := os.ReadFile(logPath)
-				if err != nil || !strings.Contains(string(b), "age plugin failed") {
-					t.Fatalf("log file = %q, err = %v", b, err)
+				if _, err := os.Stat(logPath); err != nil {
+					t.Fatalf("log file: %v", err)
 				}
 			}
 		})

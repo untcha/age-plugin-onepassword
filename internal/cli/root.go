@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"filippo.io/age"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 
@@ -127,18 +128,45 @@ func (a *app) runRoot(cmd *cobra.Command, _ []string) error {
 	}
 	cfg, logger, closeLog, err := a.setup(true)
 	if err != nil {
-		return err
+		// Setup failed before the plugin protocol ever started: age would
+		// just see stdout close and report an opaque "failed to read line:
+		// EOF". Run the protocol anyway with a decoder that always fails, so
+		// age reports err as a proper identity error. There is no usable
+		// logger here (that's part of what failed), so nothing is logged.
+		return runPlugin(a.agePlugin, setupErrorDecoder(err), a.opts)
 	}
 	defer closeLog()
 	logger.Debug("age plugin session", "state_machine", a.agePlugin, "version", appmeta.Version)
 	dec := identity.NewDecoder(cmd.Context(), a.opts.NewClient(cfg, logger), logger)
-	code, err := plugin.Run(identity.PluginName, a.agePlugin, dec.Decode, a.opts.Stdin, a.opts.Stdout, a.opts.Stderr)
+	if err := runPlugin(a.agePlugin, dec.Decode, a.opts); err != nil {
+		if code, ok := errors.AsType[exitCodeError](err); ok {
+			logger.Error("age plugin exited", "code", int(code))
+		}
+		// Any other error is logged by the caller: Execute prints it once to
+		// stderr, and logging it here too would duplicate it when
+		// AGEDEBUG=plugin sends this logger's output to stderr as well.
+		return err
+	}
+	return nil
+}
+
+// setupErrorDecoder is an IdentityDecoder that always fails with err. Used
+// when plugin setup itself failed, so age still gets a proper identity error
+// instead of a closed pipe.
+func setupErrorDecoder(err error) plugin.IdentityDecoder {
+	return func([]byte) (age.Identity, error) {
+		return nil, fmt.Errorf("age-plugin-onepassword: %w", err)
+	}
+}
+
+// runPlugin runs the age plugin protocol and turns a non-zero exit code into
+// an exitCodeError.
+func runPlugin(stateMachine string, decode plugin.IdentityDecoder, opts Options) error {
+	code, err := plugin.Run(identity.PluginName, stateMachine, decode, opts.Stdin, opts.Stdout, opts.Stderr)
 	if err != nil {
-		logger.Error("age plugin failed", "err", err)
 		return err
 	}
 	if code != 0 {
-		logger.Error("age plugin exited", "code", code)
 		return exitCodeError(code)
 	}
 	return nil
