@@ -12,6 +12,9 @@ import (
 	"filippo.io/age"
 	"filippo.io/age/agessh"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/untcha/age-plugin-onepassword/internal/onepassword"
+	"github.com/untcha/age-plugin-onepassword/internal/onepassword/fake"
 )
 
 // Key is a generated SSH key pair in the formats 1Password returns.
@@ -45,6 +48,21 @@ func RSA(t testing.TB) Key {
 // Fingerprint returns the fingerprint as 1Password reports it ("SHA256:…").
 func (k Key) Fingerprint() string {
 	return ssh.FingerprintSHA256(k.PublicKey)
+}
+
+// FakeKey returns k as an item for fake.Client.
+func (k Key) FakeKey(vaultID, vaultName, itemID, title string) fake.Key {
+	return fake.Key{
+		Item: onepassword.SSHKeyItem{
+			ID:          itemID,
+			Title:       title,
+			VaultID:     vaultID,
+			VaultName:   vaultName,
+			Fingerprint: k.Fingerprint(),
+		},
+		PublicKey:  []byte(k.AuthorizedKey),
+		PrivateKey: k.PrivatePEM,
+	}
 }
 
 // FileKey returns a fixed 16-byte age file key.
