@@ -2,7 +2,10 @@ module github.com/untcha/age-plugin-onepassword
 
 go 1.27.1
 
-tool golang.org/x/vuln/cmd/govulncheck
+tool (
+	filippo.io/age/cmd/age
+	golang.org/x/vuln/cmd/govulncheck
+)
 
 require (
 	filippo.io/age v1.3.2
@@ -15,6 +18,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/hpke v0.4.0 // indirect
+	filippo.io/nistec v0.0.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
