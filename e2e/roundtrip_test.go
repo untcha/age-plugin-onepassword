@@ -67,6 +67,30 @@ func TestIntegrationRoundTrip(t *testing.T) {
 		}
 	})
 
+	t.Run("plugin-mode setup error surfaces through age", func(t *testing.T) {
+		// F1: a config error must reach age's own stderr without AGEDEBUG=plugin,
+		// via the identity-v1 protocol, not just the plugin's own stderr (which
+		// age discards unless AGEDEBUG=plugin).
+		badEnv := append(baseEnv(),
+			"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"XDG_CONFIG_HOME="+t.TempDir(),
+			"AGE_PLUGIN_ONEPASSWORD_OP="+filepath.Join(bin, "op"),
+			"AGE_PLUGIN_ONEPASSWORD_TIMEOUT=bogus",
+			"FAKEOP_DIR="+fixtures,
+			"FAKEOP_LOG="+logPath,
+		)
+		resetLog(t, logPath)
+		cmd := exec.Command(age, "-d", "-j", "onepassword") //nolint:gosec // G204: test binary.
+		var stderr bytes.Buffer
+		cmd.Env, cmd.Stdin, cmd.Stderr = badEnv, strings.NewReader(ciphertext), &stderr
+		if err := cmd.Run(); err == nil {
+			t.Fatal("decrypt succeeded, want failure")
+		}
+		if !strings.Contains(stderr.String(), "invalid timeout") {
+			t.Fatalf("age stderr = %q, want mention of the config error", stderr.String())
+		}
+	})
+
 	t.Run("file for a key not in 1Password", func(t *testing.T) {
 		foreign := mustRun(t, env, plaintext, age, "-r", absent.AuthorizedKey)
 		resetLog(t, logPath)
