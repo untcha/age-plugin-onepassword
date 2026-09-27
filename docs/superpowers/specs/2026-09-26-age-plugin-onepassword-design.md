@@ -260,6 +260,7 @@ settings come from env vars or the config file — never flags.
 
 - `charmbracelet/log`, structured key/value.
 - CLI mode: stderr, or `log_file` if set.
+- Missing parent directories of `log_file` are created with mode `0700`.
 - Plugin mode: `log_file` if set (append, create, `0600`). Additionally, when
   `AGEDEBUG=plugin` is set (age then forwards plugin stderr), logs go to
   stderr at debug level. Both set → both destinations. Neither → discarded.
@@ -319,7 +320,7 @@ Test SSH keys (Ed25519, RSA 2048) are generated at test time by
 start with `TestI` (common.yml `test:unit` filter); integration tests are
 `TestIntegration*`.
 
-Manual check with real 1Password (documented in README): scratch vault item,
+Manual check with real 1Password (checklist in docs/manual-verification.md): scratch vault item,
 one approval prompt, debug log names only that item, locked app → clear error.
 
 ## 13. Tooling
