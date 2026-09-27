@@ -141,9 +141,8 @@ func secretRef(vaultID, itemID, field string) (string, error) {
 	return "op://" + vaultID + "/" + itemID + "/" + field, nil
 }
 
-// isNotFound matches op's messages for missing items and vaults. Not verified
-// against real op — see the manual verification section in the README; keep
-// fakeop messages in sync.
+// isNotFound matches op's messages for missing items and vaults, verified
+// against op 2.39.0 (docs/manual-verification.md). Keep fakeop messages in sync.
 func isNotFound(stderr string) bool {
 	return strings.Contains(stderr, "isn't an item") || strings.Contains(stderr, "isn't a vault")
 }

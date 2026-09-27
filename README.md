@@ -92,7 +92,8 @@ log_level: debug
 
 Paths (`op`, `log_file`) must be absolute or start with `~/`; `op` may also be a bare command
 name found via `PATH`. Other relative paths are rejected, because age runs plugins with the
-temp directory as working directory.
+temp directory as working directory. Missing parent directories of `log_file` are created
+(mode `0700`).
 
 ## Debugging
 
@@ -124,50 +125,6 @@ Create the identity with `age-plugin-onepassword identity [--key op://…] -o ~/
 - The stanza tag reveals which SSH key a file is for to anyone who has that public key
   (standard age behaviour).
 
-## Manual verification (real 1Password)
-
-Automated tests use a fake `op`; the CLI has never been run against the real 1Password CLI. Before
-relying on it, verify by hand against a scratch vault:
-
-1. Create a scratch SSH Key item (check `op item create --help` for options on your `op` version):
-
-   ```sh
-   op item create --category ssh --title age-test --vault <vault> --ssh-generate-key ed25519
-   ```
-
-2. List it and grab the public key, then encrypt a test file to it:
-
-   ```sh
-   age-plugin-onepassword recipients
-   age -r "ssh-ed25519 AAAA… age-test" -o secret.age secret.txt
-   ```
-
-3. Decrypt with debug logging on, and confirm exactly one approval prompt and that the log names
-   only the `age-test` item (no other vault items):
-
-   ```sh
-   AGE_PLUGIN_ONEPASSWORD_LOG_FILE=/tmp/aop.log AGE_PLUGIN_ONEPASSWORD_LOG_LEVEL=debug \
-     age -d -j onepassword secret.age
-   ```
-
-4. Repeat step 3 with a pinned identity (`identity --key "op://<vault>/age-test" -o op.id`, then
-   `age -d -i op.id secret.age`).
-
-5. Lock the 1Password app (or sign out) and decrypt again; confirm the plugin reports a clear
-   error rather than hanging or a raw stack trace.
-
-6. Delete the scratch item: `op item delete age-test --vault <vault>`.
-
-Two facts this plugin's code assumes about `op` — reconfirm them if `op` version differs
-significantly from what was last checked, or if this check has never been done:
-
-- `op item list --categories "SSH Key" --format json` items carry an `additional_information`
-  field equal to `SHA256:…` (the SSH public key fingerprint) — this is how the plugin matches
-  a file's stanza to a 1Password item.
-- `op`'s stderr for a missing item or vault contains the phrases `isn't an item` / `isn't a
-  vault` — this is what `isNotFound` in `internal/onepassword/op.go` matches to distinguish
-  "not found" from other errors.
-
 ## Development
 
 ```sh
@@ -176,6 +133,9 @@ task test:integration  # round trip through the real age CLI with a fake op
 task project:vuln      # govulncheck (pinned)
 task build
 ```
+
+Verification against the real 1Password CLI is a manual checklist:
+[docs/manual-verification.md](docs/manual-verification.md).
 
 ## License
 
