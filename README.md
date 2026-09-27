@@ -1,5 +1,7 @@
 # age-plugin-onepassword
 
+![age-plugin-onepassword](assets/readme-header.png)
+
 An [age](https://age-encryption.org) plugin that decrypts files encrypted to SSH keys stored in
 1Password. It reads **only the one private key** a file was encrypted to.
 
