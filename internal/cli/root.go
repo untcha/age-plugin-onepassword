@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"filippo.io/age"
 	"github.com/charmbracelet/log"
@@ -189,6 +190,9 @@ func (a *app) setup(pluginMode bool) (config.Config, *log.Logger, func(), error)
 	var writers []io.Writer
 	closeLog := func() {}
 	if cfg.LogFile != "" {
+		if err := os.MkdirAll(filepath.Dir(cfg.LogFile), 0o700); err != nil {
+			return config.Config{}, nil, nil, fmt.Errorf("create log directory: %w", err)
+		}
 		//nolint:gosec // G304: log path is user configuration.
 		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {

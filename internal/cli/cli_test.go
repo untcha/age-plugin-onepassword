@@ -328,3 +328,22 @@ func TestNoArgsShowsHelp(t *testing.T) {
 		t.Fatalf("code = %d, out = %q", code, out)
 	}
 }
+
+func TestLogFileDirectoryCreated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state", "age-plugin-onepassword")
+	logPath := filepath.Join(dir, "aop.log")
+	t.Setenv(config.EnvPrefix+"_LOG_FILE", logPath)
+	if code, _, errOut := run(t, &fake.Client{}, "recipients"); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errOut)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("log dir perm = %o, want 700", perm)
+	}
+	if _, err := os.Stat(logPath); err != nil {
+		t.Fatalf("log file not created: %v", err)
+	}
+}
