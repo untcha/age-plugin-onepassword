@@ -38,6 +38,10 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
      the plugin matches a file's stanza tag to an item.
    - The three errors must contain `isn't an item` / `isn't a vault`: `isNotFound` in
      `internal/onepassword/op.go` matches these phrases. Keep `fakeop` messages in sync.
+   - Error hints (`internal/onepassword/hints.go`) match phrases in op's stderr. Only
+     `authorization prompt dismissed` is confirmed (step 7). When you see a real
+     not-signed-in, desktop-app or network error, check that its hint appears and add
+     the phrase if not.
 
 2. Create a test SSH Key item if the vault has none (check `op item create --help` for your
    `op` version):
