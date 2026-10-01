@@ -5,12 +5,10 @@ without my explicit approval! I will handle all this on my own.
 
 Format: `<type> <emoji>(<scope>): <subject>`
 
-`<type>` and `<emoji>` see table below
-`<scope>` is optional and should be derived from the current change
-
-`<subject>` max. character limit is `80` (including `type`, `emoji` and `(scope)`)
-
-Every commit message should also have a longer commit `body` with max. character limit `1000` and line length `72`.
+- `<type>` and `<emoji>` see table below.
+- `<scope>`: optional, the area the change touches (e.g., `api`, `cli`, `config`, `auth`).
+- Subject line: max. 80 characters, including type, emoji and scope.
+- Body: always present, max. 1000 characters, lines wrapped at 72.
 
 The `body` explains **why** the change was made: the problem it solves, the motivation, or
 the consequence. Don't only list what changed; the diff already shows that.
@@ -52,4 +50,4 @@ Add a retry loop to client.go and a test for it.
 
 ## Meta
 
-Version: v0.2.0 | Updated: 2026-10-01 | Author: Alex Untch
+Version: v0.3.0 | Updated: 2026-10-01 | Author: Alex Untch
