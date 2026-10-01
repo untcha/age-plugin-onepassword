@@ -256,4 +256,52 @@ func TestOpTimeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want DeadlineExceeded", err)
 	}
+	if !strings.Contains(err.Error(), "hint: ") || !strings.Contains(err.Error(), "200ms") {
+		t.Fatalf("err = %q, want a hint naming the 200ms timeout", err)
+	}
+}
+
+func TestOpErrorHints(t *testing.T) {
+	tests := []struct {
+		name     string
+		stderr   string
+		wantHint string // empty: no hint expected
+	}{
+		{"prompt dismissed", "authorization prompt dismissed, please try again", "approve the 1Password prompt"},
+		{
+			"not signed in",
+			"You are not currently signed in. Please run `op signin --help` for instructions",
+			"op signin",
+		},
+		{"account not signed in", "account is not signed in", "op signin"},
+		{"session expired", "session expired, sign in to create a new session", "op signin"},
+		{"desktop app", "connecting to desktop app: read: connection reset", "Integrate with 1Password CLI"},
+		{
+			"network dns",
+			"Post \"https://my.1password.com/api\": dial tcp: lookup my.1password.com: no such host",
+			"network",
+		},
+		{"network tls", "Get \"https://my.1password.com/api\": net/http: TLS handshake timeout", "network"},
+		{"unknown", "unknown flag: --categoriez", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, _, _ := twoVaults(t)
+			setup(t, dir)
+			t.Setenv("FAKEOP_FAIL", tt.stderr)
+			_, err := newClient(onepassword.OpOptions{}).ListSSHKeys(t.Context())
+			if err == nil || !strings.Contains(err.Error(), tt.stderr) {
+				t.Fatalf("err = %v, want it to contain op's stderr", err)
+			}
+			if tt.wantHint == "" {
+				if strings.Contains(err.Error(), "hint:") {
+					t.Fatalf("unexpected hint in %q", err)
+				}
+				return
+			}
+			if !strings.Contains(err.Error(), "hint: ") || !strings.Contains(err.Error(), tt.wantHint) {
+				t.Fatalf("err = %q, want hint containing %q", err, tt.wantHint)
+			}
+		})
+	}
 }

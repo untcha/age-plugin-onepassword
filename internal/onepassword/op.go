@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -125,10 +126,15 @@ func (c *OpClient) run(ctx context.Context, name string, args ...string) ([]byte
 	}
 	msg := strings.TrimSpace(stderr.String())
 	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) && c.opts.Timeout > 0:
+		return nil, fmt.Errorf("op %s: %w (hint: no answer within %s; approve any open 1Password "+
+			"prompt or raise the timeout setting)", name, ctx.Err(), c.opts.Timeout)
 	case ctx.Err() != nil:
 		return nil, fmt.Errorf("op %s: %w", name, ctx.Err())
 	case isNotFound(msg):
 		return nil, fmt.Errorf("op %s: %w: %s", name, ErrNotFound, msg)
+	case hintFor(msg) != "":
+		return nil, fmt.Errorf("op %s: %w: %s (hint: %s)", name, err, msg, hintFor(msg))
 	default:
 		return nil, fmt.Errorf("op %s: %w: %s", name, err, msg)
 	}
