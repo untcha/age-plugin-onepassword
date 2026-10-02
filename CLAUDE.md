@@ -13,7 +13,7 @@ Working style, Go standards and commit rules live in AGENTS.md (imported above) 
 task check                 # fmt, lint (golangci-lint), unit tests
 task test                  # go test ./...
 task test:integration      # e2e round trip: builds the plugin, real age CLI and fakeop
-task project:vuln          # govulncheck (pinned via go tool)
+task vuln                  # govulncheck (pinned in taskfiles/common.yml)
 task build                 # bin/<os>-<arch>/age-plugin-onepassword, version-stamped
 task project:install       # install to ~/.local/bin with version from git describe
 

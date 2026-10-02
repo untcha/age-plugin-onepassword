@@ -132,7 +132,7 @@ Create the identity with `age-plugin-onepassword identity [--key op://…] -o ~/
 ```sh
 task check             # fmt, lint, tests
 task test:integration  # round trip through the real age CLI with a fake op
-task project:vuln      # govulncheck (pinned)
+task vuln              # govulncheck (pinned)
 task build
 ```
 
