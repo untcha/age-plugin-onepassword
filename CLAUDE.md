@@ -15,7 +15,7 @@ task test                  # go test ./...
 task test:integration      # e2e round trip: builds the plugin, real age CLI and fakeop
 task vuln                  # govulncheck (pinned in taskfiles/common.yml)
 task build                 # bin/<os>-<arch>/age-plugin-onepassword, version-stamped
-task project:install       # install to ~/.local/bin with version from git describe
+task install               # install to ~/.local/bin with version from git describe
 
 go test ./internal/identity -run TestName       # single test
 go test -tags=integration -run Integration ./e2e # integration only

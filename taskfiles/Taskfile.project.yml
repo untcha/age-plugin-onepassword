@@ -4,9 +4,4 @@ version: "3"
 # Project tasks for age-plugin-onepassword (run as `task project:<name>`).
 # Included by Taskfile.yml with optional: true — keep this path.
 
-tasks:
-  install:
-    desc: Install the binary in ~/.local/bin with the version stamped from git describe
-    cmds:
-      # A new task process, so the root Taskfile's LDFLAGS sees VERSION in its env.
-      - VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" task install
+tasks: {}

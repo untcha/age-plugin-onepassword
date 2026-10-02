@@ -21,7 +21,7 @@ Requires Go 1.27.1 and [Task](https://taskfile.dev).
 ```sh
 git clone https://github.com/untcha/age-plugin-onepassword
 cd age-plugin-onepassword
-task project:install   # builds with the version from git describe, installs to ~/.local/bin
+task install           # builds with the version from git describe, installs to ~/.local/bin
 ```
 
 `~/.local/bin` must be on `PATH` so age can find the plugin.
