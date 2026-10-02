@@ -6,7 +6,7 @@ version: "3"
 # Shared Go tasks (fmt, lint, deps, test:*, coverage, clean:caches/coverage) live
 # in taskfiles/common.yml and are flattened into this namespace. This file adds the
 # binary build, cross-compilation, and dev-install tasks.
-# For libraries use taskfiles/library/Taskfile.yml; for AWS Lambdas use taskfiles/lambda/Taskfile.yml.
+# For libraries or AWS Lambdas, start from the matching template in untcha/meta.
 
 includes:
   # Shared tasks, flattened so they appear unprefixed (e.g. `task lint`).
@@ -95,6 +95,9 @@ tasks:
       - mkdir -p {{.BIN_DIR}}
       - "{{.CGO}} {{.GOHOST}} go build -a -trimpath -ldflags='{{.LDFLAGS}}' -o {{.BIN_PATH}} cmd/{{.APP_NAME}}/main.go"
     sources:
+      # Add any files pulled in with go:embed. They change the binary, but
+      # Task only sees what is listed here, so an edit to one would leave a
+      # stale binary that Task still reports as up to date.
       - "**/*.go"
       - go.mod
       - go.sum
