@@ -20,6 +20,7 @@ When proposing an implementation:
 - Present the plan first, in a short structured form.
 - Suggest the best default; mention alternatives and trade-offs briefly.
 - Ask for confirmation before large or hard-to-reverse changes.
+- Commit messages: propose only, following `docs/COMMIT_GUIDE.md`. Never stage or commit.
 
 ---
 
@@ -194,4 +195,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.5.0 | Updated: 2026-10-01 | Author: Alex Untch
+Version: v0.5.1 | Updated: 2026-10-02 | Author: Alex Untch
