@@ -18,6 +18,10 @@ vars:
   COVERAGE_FILE: "{{.COVERAGE_DIR}}/coverage.out"
   COVERAGE_HTML: "{{.COVERAGE_DIR}}/coverage.html"
 
+  # Pinned govulncheck version for `vuln`. Bump it here; every repo picks the
+  # new version up with its next copy of this file.
+  GOVULNCHECK_VERSION: v1.8.0
+
 tasks:
   default:
     desc: Default task - show available tasks
@@ -25,10 +29,19 @@ tasks:
       - task --list-all
     silent: true
 
+  # Formatters (gofmt, goimports, golines) are configured in .golangci.yml, so
+  # `fmt` and `lint` always agree on what "formatted" means. golines can move a
+  # trailing //nolint onto a different line when it wraps a statement; put long
+  # directives on their own line above the statement instead.
   fmt:
-    desc: Format Go code
+    desc: Format Go code (formatters from .golangci.yml)
     cmds:
-      - go fmt ./...
+      - golangci-lint fmt
+
+  fmt:check:
+    desc: Fail if any file needs formatting (writes nothing; for CI)
+    cmds:
+      - golangci-lint fmt --diff
 
   vet:
     desc: Run go vet
@@ -45,10 +58,13 @@ tasks:
     cmds:
       - golangci-lint run -v
 
-  lint:fmt:
-    desc: Run golangci-lint formatter
+  # `go run pkg@version` instead of a `tool` directive in go.mod: the version
+  # is pinned and checksum-verified, and a library doesn't pass a dev tool's
+  # dependencies on to the modules that import it.
+  vuln:
+    desc: Scan dependencies for known vulnerabilities (pinned govulncheck)
     cmds:
-      - golangci-lint fmt
+      - go run golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}} ./...
 
   deps:
     desc: Download and verify dependencies
