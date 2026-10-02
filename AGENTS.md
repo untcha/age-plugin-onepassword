@@ -85,13 +85,13 @@ pkg/...             # only if genuinely reusable
 
 - Use **Taskfile** for automation (see templates below). Reproducible builds:
   pin versions, no implicit installs. Avoid Makefiles and over-engineered pipelines.
-- Keep `common.yml` at `taskfiles/common.yml` and include it by a repo-relative
-  path. **Adjust that include when you copy a template:** the templates under
-  `taskfiles/<type>/` include `../common.yml`, which is correct where they sit,
-  but a project root needs `./taskfiles/common.yml`. Left unadjusted the path
-  escapes the repo, so `task` can pick up a stray copy from the parent directory
-  and appear to work while being broken for everyone else — in a fresh clone the
-  include fails at parse time and every task dies, not just the shared ones.
+- Keep `common.yml` at `taskfiles/common.yml`. The templates already include it
+  as `./taskfiles/common.yml`, relative to the destination repo root, so copy
+  them without editing the include. Keep the path repo-relative and never point
+  it at `../common.yml`: a path that leaves the repo can resolve against a stray
+  copy in the parent directory, so `task` appears to work for you while being
+  broken for everyone else — in a fresh clone the include fails at parse time
+  and every task dies, not just the shared ones.
 
 ---
 
@@ -195,4 +195,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.5.1 | Updated: 2026-10-02 | Author: Alex Untch
+Version: v0.5.2 | Updated: 2026-10-02 | Author: Alex Untch
