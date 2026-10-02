@@ -10,6 +10,12 @@ tmp/
 ### Taskfile ###
 .task
 
+### Backups ###
+
+# Copies made by hand or by editors before risky edits (foo.bak, foo-bak).
+*.bak
+*-bak
+
 ### Superpowers ###
 
 # Agent scratch space (brainstorming, subagent-driven development). Local-only.
