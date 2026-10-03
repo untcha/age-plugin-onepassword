@@ -84,6 +84,9 @@ pkg/...             # only if genuinely reusable
   from `debug.ReadBuildInfo()`, skipping empty and `(devel)`. Builds via
   `go install module@vX.Y.Z` skip the Taskfile; this makes them report the tag.
 - Surface `Version` in `--version` output and in the User-Agent of API clients.
+- The template carries no app name, so it stays identical across repos. A repo
+  that needs one adds it below the template code: `const Name = "<app>"` and
+  `func UserAgent() string { return Name + "/" + Version }`.
 
 ### Tooling
 
@@ -201,4 +204,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.6.0 | Updated: 2026-10-03 | Author: Alex Untch
+Version: v0.6.1 | Updated: 2026-10-03 | Author: Alex Untch
