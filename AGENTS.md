@@ -84,6 +84,12 @@ pkg/...             # only if genuinely reusable
   from `debug.ReadBuildInfo()`, skipping empty and `(devel)`. Builds via
   `go install module@vX.Y.Z` skip the Taskfile; this makes them report the tag.
 - Surface `Version` in `--version` output and in the User-Agent of API clients.
+- `--version` (and a `version` subcommand, if any) prints one line:
+  `<binary> <appmeta.String()>`, e.g. `tool v1.2.0 (commit abc1234, built …)`.
+  With cobra, set `Version: appmeta.String()` and
+  `SetVersionTemplate("<binary> {{.Version}}\n")`. With fang, also pass
+  `fang.WithVersion(appmeta.String())`; otherwise fang overwrites `Version`
+  with its own build info string. Skip `fang.WithCommit`, which repeats the commit.
 - The template carries no app name, so it stays identical across repos. A repo
   that needs one adds it below the template code: `const Name = "<app>"` and
   `func UserAgent() string { return Name + "/" + Version }`.
@@ -204,4 +210,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.6.1 | Updated: 2026-10-03 | Author: Alex Untch
+Version: v0.6.2 | Updated: 2026-10-03 | Author: Alex Untch
