@@ -3,10 +3,13 @@ package appmeta
 
 import (
 	"fmt"
+	"path"
 	"runtime/debug"
 )
 
 var (
+	// Name is the application name, stamped from the Taskfile's APP_NAME.
+	Name      = ""
 	Version   = "dev"
 	Commit    = "unknown"
 	BuildDate = "unknown"
@@ -17,6 +20,16 @@ var (
 func init() {
 	info, _ := debug.ReadBuildInfo()
 	Version = resolveVersion(Version, info)
+	Name = resolveName(Name, info)
+}
+
+// resolveName returns the stamped name, falling back to the last element of
+// the main package path: `go install module/cmd/<app>@version` yields <app>.
+func resolveName(stamped string, info *debug.BuildInfo) string {
+	if stamped != "" || info == nil || info.Path == "" {
+		return stamped
+	}
+	return path.Base(info.Path)
 }
 
 // resolveVersion returns the stamped version, falling back to the module
