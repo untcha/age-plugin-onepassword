@@ -36,22 +36,15 @@ vars:
   APP_NAME: age-plugin-onepassword # Name of the application
   BIN_NAME: "{{.APP_NAME}}" # Name of the binary, if different from the app name
 
-  # GOOS and GOARCH are determined dynamically using `go env`
-  # but can be overridden by setting TARGET_OS and TARGET_ARCH environment variables.
+  # GOOS and GOARCH are the host platform, determined dynamically using `go env`.
+  # The build target (TARGET_OS / TARGET_ARCH) and the paths derived from it are
+  # resolved inside the `build` task — see the comment there.
   GOOS:
     sh: go env GOOS
   GOARCH:
     sh: go env GOARCH
 
-  # TARGET_OS and TARGET_ARCH can be set to override the default GOOS and GOARCH values.
-  TARGET_OS: "{{default .GOOS .TARGET_OS}}"
-  TARGET_ARCH: "{{default .GOARCH .TARGET_ARCH}}"
-
   CGO: CGO_ENABLED=0
-  GOHOST: "GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}}"
-
-  BIN_DIR: "bin/{{.TARGET_OS}}-{{.TARGET_ARCH}}"
-  BIN_PATH: "{{.BIN_DIR}}/{{.BIN_NAME}}"
 
   # RELEASE_TARGETS is the OS/ARCH matrix that `build:all` cross-compiles.
   # Whitespace-separated "os/arch" tokens (Task splits the list on whitespace).
@@ -73,9 +66,9 @@ vars:
   BUILD_DATE:
     sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
 
-  # LDFLAGS stamps version metadata into {{.APPMETA_DIR}} when that package
-  # exists; otherwise it falls back to plain strip flags so projects without
-  # an appmeta package build cleanly.
+  # LDFLAGS stamps the app name and version metadata into {{.APPMETA_DIR}}
+  # when that package exists; otherwise it falls back to plain strip flags so
+  # projects without an appmeta package build cleanly.
   LDFLAGS:
     sh: |
       if [ ! -d "{{.APPMETA_DIR}}" ]; then
@@ -86,6 +79,7 @@ vars:
       COMMIT_VALUE="${COMMIT:-{{.GIT_COMMIT}}}"
       BUILD_DATE_VALUE="${BUILD_DATE:-{{.BUILD_DATE}}}"
       echo "-s -w \
+      -X {{.APPMETA_MODULE_PATH}}.Name={{.APP_NAME}} \
       -X {{.APPMETA_MODULE_PATH}}.Version=${VERSION_VALUE} \
       -X {{.APPMETA_MODULE_PATH}}.Commit=${COMMIT_VALUE} \
       -X {{.APPMETA_MODULE_PATH}}.BuildDate=${BUILD_DATE_VALUE}"
@@ -95,7 +89,23 @@ vars:
 
 tasks:
   build:
-    desc: Build the binary for the target OS/ARCH
+    desc: Build the binary for the target OS/ARCH (override with TARGET_OS / TARGET_ARCH)
+    # The label keys Task's up-to-date checksum per target. Without it every
+    # target shares the "build" checksum, so after building another target a
+    # rebuild of the first is skipped as up to date and leaves a stale binary.
+    label: "build:{{.TARGET_OS}}-{{.TARGET_ARCH}}"
+    vars:
+      # Resolved in task scope, not globally, so every way of choosing the
+      # target reaches the derived paths: env (`TARGET_OS=linux task build`),
+      # CLI (`task build TARGET_OS=linux`) and call vars (`task: build` with
+      # `vars: {TARGET_OS: linux}`). Global vars are resolved before call vars
+      # apply, so a call-var override changed TARGET_OS but left BIN_DIR on the
+      # host platform — building for one OS into another OS's directory.
+      TARGET_OS: "{{.TARGET_OS | default .GOOS}}"
+      TARGET_ARCH: "{{.TARGET_ARCH | default .GOARCH}}"
+      GOHOST: "GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}}"
+      BIN_DIR: "bin/{{.TARGET_OS}}-{{.TARGET_ARCH}}"
+      BIN_PATH: "{{.BIN_DIR}}/{{.BIN_NAME}}"
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - "{{.CGO}} {{.GOHOST}} go build -a -trimpath -ldflags='{{.LDFLAGS}}' -o {{.BIN_PATH}} cmd/{{.APP_NAME}}/main.go"
@@ -115,16 +125,14 @@ tasks:
       Cross-compiles `build` once per entry in RELEASE_TARGETS, leaving each
       artifact in its own bin/<os>-<arch>/ directory.
 
-      The target is handed over as TARGET_OS/TARGET_ARCH environment variables
-      because the vars above read `{{`{{default .GOOS .TARGET_OS}}`}}`, so an
-      env override wins over the host defaults without duplicating the build
-      command per platform.
+      The target is passed as call vars; `build` resolves its paths in task
+      scope, so they follow the override without a nested `task` process.
     cmds:
       - for: { var: RELEASE_TARGETS }
-        cmd: >-
-          TARGET_OS={{.ITEM | splitList "/" | first}}
-          TARGET_ARCH={{.ITEM | splitList "/" | last}}
-          task build
+        task: build
+        vars:
+          TARGET_OS: '{{.ITEM | splitList "/" | first}}'
+          TARGET_ARCH: '{{.ITEM | splitList "/" | last}}'
 
   build:check:
     desc: Run checks, then build the binary
@@ -154,9 +162,14 @@ tasks:
 
   dev:install:
     desc: Install the binary in {{.LOCAL_BIN}} for development
+    vars:
+      # Always the host build: an installed binary must run on this machine,
+      # even if TARGET_OS / TARGET_ARCH are set in the environment.
+      BIN_PATH: "bin/{{.GOOS}}-{{.GOARCH}}/{{.BIN_NAME}}"
     cmds:
       - task: clean
       - task: build
+        vars: { TARGET_OS: "{{.GOOS}}", TARGET_ARCH: "{{.GOARCH}}" }
       - mkdir -p {{.LOCAL_BIN}}
       # Install atomically instead of with a plain `cp`. `cp` opens the
       # destination with O_TRUNC and writes into the EXISTING inode, so a copy
