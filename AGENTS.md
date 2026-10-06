@@ -77,8 +77,9 @@ pkg/...             # only if genuinely reusable
 
 ### Build Metadata
 
-- Single source of truth for version info: `internal/appmeta`
-  (`Version`, `Commit`, `BuildDate`), stamped via `-ldflags` by the Taskfile.
+- Single source of truth for build info: `internal/appmeta`
+  (`Name`, `Version`, `Commit`, `BuildDate`), stamped via `-ldflags` by the
+  Taskfile. `Name` comes from the Taskfile's `APP_NAME`.
   Start from the `appmeta/` template (see **Templates**).
 - When nothing is stamped (`Version == "dev"`), fall back to the module version
   from `debug.ReadBuildInfo()`, skipping empty and `(devel)`. Builds via
@@ -90,8 +91,11 @@ pkg/...             # only if genuinely reusable
   `SetVersionTemplate("<binary> {{.Version}}\n")`. With fang, also pass
   `fang.WithVersion(appmeta.String())`; otherwise fang overwrites `Version`
   with its own build info string. Skip `fang.WithCommit`, which repeats the commit.
-- The template carries no app name, so it stays identical across repos. A repo
-  that needs one adds it below the template code: `const Name = "<app>"` and
+- When nothing is stamped (`Name == ""`), fall back to the last element of the
+  main package path, so `go install module/cmd/<app>@vX.Y.Z` reports `<app>`.
+- Never hardcode the app name in `appmeta`: the template stays identical across
+  repos and the Taskfile stays the one place the name lives. A repo that needs
+  a User-Agent adds it below the template code:
   `func UserAgent() string { return Name + "/" + Version }`.
 
 ### Tooling
@@ -210,4 +214,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.6.2 | Updated: 2026-10-03 | Author: Alex Untch
+Version: v0.6.3 | Updated: 2026-10-06 | Author: Alex Untch
