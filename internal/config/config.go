@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,16 +44,24 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "age-plugin-onepassword", "config.yaml"), nil
 }
 
+// defaults holds every known key. Keys not listed here are rejected in the
+// config file, so a typo like "log-file" fails instead of being ignored.
+var defaults = map[string]string{
+	"vault":     "",
+	"account":   "",
+	"op":        "op",
+	"timeout":   "2m",
+	"log_file":  "",
+	"log_level": "info",
+}
+
 // Load resolves env > file > defaults. A non-empty path must exist; the
 // default path is optional.
 func Load(path string) (Config, error) {
 	v := viper.New()
-	v.SetDefault("vault", "")
-	v.SetDefault("account", "")
-	v.SetDefault("op", "op")
-	v.SetDefault("timeout", "2m")
-	v.SetDefault("log_file", "")
-	v.SetDefault("log_level", "info")
+	for k, val := range defaults {
+		v.SetDefault(k, val)
+	}
 	v.SetEnvPrefix(EnvPrefix)
 	v.AutomaticEnv()
 
@@ -108,6 +117,11 @@ func readFile(v *viper.Viper, path string) error {
 	v.SetConfigType("yaml")
 	if err := v.ReadInConfig(); err != nil {
 		return fmt.Errorf("config: read %s: %w", path, err)
+	}
+	for _, k := range slices.Sorted(slices.Values(v.AllKeys())) {
+		if _, ok := defaults[k]; !ok {
+			return fmt.Errorf("config: %s: unknown key %q", path, k)
+		}
 	}
 	return nil
 }

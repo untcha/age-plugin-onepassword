@@ -106,6 +106,8 @@ func TestLoadErrors(t *testing.T) {
 	}{
 		{name: "explicit missing file", path: "missing"},
 		{name: "malformed yaml", file: "vault: [unclosed\n"},
+		{name: "unknown key", file: "log-file: /tmp/x.log\n"},
+		{name: "unknown nested key", file: "vault:\n  name: Work\n"},
 		{name: "invalid timeout", env: map[string]string{"TIMEOUT": "soon"}},
 		{name: "zero timeout", env: map[string]string{"TIMEOUT": "0s"}},
 		{name: "negative timeout", env: map[string]string{"TIMEOUT": "-1s"}},
