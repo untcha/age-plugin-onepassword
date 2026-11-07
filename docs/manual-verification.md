@@ -5,7 +5,7 @@ CLI. Re-run it after significant `op` upgrades or changes to `internal/onepasswo
 
 ## Last run
 
-2026-11-07, `op` 2.42.0, macOS — partial run for the config-key and item-title fixes
+2026-11-07, `op` 2.42.0, age v1.3.2, macOS — partial run for the config-key and item-title fixes
 (steps 8 and 9); all passed:
 
 | Check | Result |
