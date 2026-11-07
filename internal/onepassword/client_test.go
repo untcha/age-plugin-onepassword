@@ -40,7 +40,7 @@ func TestParseItemRef(t *testing.T) {
 		{ref: "op://Private/My Key", vault: "Private", item: "My Key"},
 		{ref: "Private/chezmoi-age", wantError: true},
 		{ref: "op://Private", wantError: true},
-		{ref: "op://Private/item/private key", wantError: true},
+		{ref: "op://Private/github/work", vault: "Private", item: "github/work"},
 		{ref: "op:///item", wantError: true},
 		{ref: "op://Private/", wantError: true},
 	}

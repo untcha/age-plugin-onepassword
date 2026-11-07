@@ -51,14 +51,16 @@ func ValidID(s string) bool {
 }
 
 // ParseItemRef parses "op://<vault>/<item>" into vault and item (names or IDs).
+// Only the first "/" splits, so item titles may contain "/" (as printed by
+// the recipients command); vault names may not.
 func ParseItemRef(ref string) (vault, item string, err error) {
 	rest, ok := strings.CutPrefix(ref, "op://")
 	if !ok {
 		return "", "", fmt.Errorf("item reference %q: must start with op://", ref)
 	}
-	parts := strings.Split(rest, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	vault, item, ok = strings.Cut(rest, "/")
+	if !ok || vault == "" || item == "" {
 		return "", "", fmt.Errorf("item reference %q: want op://<vault>/<item>", ref)
 	}
-	return parts[0], parts[1], nil
+	return vault, item, nil
 }
