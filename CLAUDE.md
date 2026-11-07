@@ -29,7 +29,7 @@ templates; repo-specific tasks go in `taskfiles/Taskfile.project.yml` (`project:
 One binary with two roles, dispatched in `internal/cli`:
 
 - **age plugin**: age runs it as `age-plugin-onepassword --age-plugin=identity-v1`.
-  `internal/plugin` drives the `filippo.io/age/plugin` state machine. Only
+  `runPlugin` in `internal/cli/root.go` drives the `filippo.io/age/plugin` state machine. Only
   `identity-v1` exists; encryption is plain age with an SSH recipient, so there is
   no recipient-v1 side.
 - **User CLI** (Cobra): `recipients` (list SSH public keys), `identity` (write
