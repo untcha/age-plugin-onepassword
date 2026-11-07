@@ -5,6 +5,19 @@ CLI. Re-run it after significant `op` upgrades or changes to `internal/onepasswo
 
 ## Last run
 
+2026-11-07, `op` 2.42.0, macOS — partial run for the config-key and item-title fixes
+(steps 8 and 9); all passed:
+
+| Check | Result |
+|---|---|
+| `recipients` lists an item titled `age-test/slash` | `op://TEMP/age-test/slash` |
+| `identity --key` with `/` in the title | real `op item get` resolves it |
+| Decrypt with the pinned and the default identity | both decrypt |
+| Unknown config key, CLI mode | `unknown key "log-file"` |
+| Unknown config key, plugin mode | shown by age |
+
+## Previous full run
+
 2026-09-27, `op` 2.39.0, age v1.3.2, macOS — all checks passed:
 
 | Check | Result |
@@ -89,5 +102,30 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
 7. Lock the 1Password app and decrypt twice: once approving the unlock prompt (decrypts), once
    dismissing it (clear error, no hang, no stack trace).
 
-8. Delete the test files and, if you created it, the test item:
-   `op item delete age-test --vault <vault>`.
+8. Create an item whose title contains `/` and pin it by name; both decrypts must work:
+
+   ```sh
+   op item create --category ssh --title "age-test/slash" --vault <vault> --ssh-generate-key ed25519
+   age-plugin-onepassword recipients | grep slash
+   age-plugin-onepassword identity --key "op://<vault>/age-test/slash" -o slash.id
+   pub=$(age-plugin-onepassword recipients --json \
+     | jq -r '.[] | select(.item=="age-test/slash") | .public_key')
+   echo hi | age -r "$pub" -o slash.age
+   age -d -i slash.id slash.age
+   age -d -j onepassword slash.age
+   ```
+
+9. Put an unknown key in the config file; both modes must name it:
+
+   ```sh
+   mkdir -p /tmp/xdg/age-plugin-onepassword
+   printf 'log-file: /tmp/x.log\n' > /tmp/xdg/age-plugin-onepassword/config.yaml
+   XDG_CONFIG_HOME=/tmp/xdg age-plugin-onepassword recipients
+   XDG_CONFIG_HOME=/tmp/xdg age -d -j onepassword secret.age
+   ```
+
+   Expect `unknown key "log-file"` both times; in plugin mode age itself prints it.
+
+10. Delete the test files and, if you created them, the test items:
+    `op item delete age-test --vault <vault>` and
+    `op item delete "age-test/slash" --vault <vault>`.
