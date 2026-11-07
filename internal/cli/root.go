@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"filippo.io/age"
+	ageplugin "filippo.io/age/plugin"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/untcha/age-plugin-onepassword/internal/config"
 	"github.com/untcha/age-plugin-onepassword/internal/identity"
 	"github.com/untcha/age-plugin-onepassword/internal/onepassword"
-	"github.com/untcha/age-plugin-onepassword/internal/plugin"
 )
 
 const long = `age-plugin-onepassword decrypts age files encrypted to SSH keys stored in 1Password.
@@ -154,20 +154,30 @@ func (a *app) runRoot(cmd *cobra.Command, _ []string) error {
 // setupErrorDecoder is an IdentityDecoder that always fails with err. Used
 // when plugin setup itself failed, so age still gets a proper identity error
 // instead of a closed pipe.
-func setupErrorDecoder(err error) plugin.IdentityDecoder {
+func setupErrorDecoder(err error) identityDecoder {
 	return func([]byte) (age.Identity, error) {
 		return nil, fmt.Errorf("age-plugin-onepassword: %w", err)
 	}
 }
 
+// identityDecoder turns an identity payload into an age.Identity.
+type identityDecoder func(data []byte) (age.Identity, error)
+
 // runPlugin runs the age plugin protocol and turns a non-zero exit code into
-// an exitCodeError.
-func runPlugin(stateMachine string, decode plugin.IdentityDecoder, opts Options) error {
-	code, err := plugin.Run(identity.PluginName, stateMachine, decode, opts.Stdin, opts.Stdout, opts.Stderr)
-	if err != nil {
-		return err
+// an exitCodeError. Only identity-v1 exists: encryption uses plain SSH
+// recipients.
+func runPlugin(stateMachine string, decode identityDecoder, opts Options) error {
+	if stateMachine != "identity-v1" {
+		return fmt.Errorf("unsupported age plugin state machine %q: "+
+			"encrypt with an ssh-ed25519 or ssh-rsa recipient (age -r) instead", stateMachine)
 	}
-	if code != 0 {
+	p, err := ageplugin.New(identity.PluginName)
+	if err != nil {
+		return fmt.Errorf("init age plugin: %w", err)
+	}
+	p.SetIO(opts.Stdin, opts.Stdout, opts.Stderr)
+	p.HandleIdentity(decode)
+	if code := p.IdentityV1(); code != 0 {
 		return exitCodeError(code)
 	}
 	return nil
