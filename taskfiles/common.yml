@@ -22,6 +22,10 @@ vars:
   # new version up with its next copy of this file.
   GOVULNCHECK_VERSION: v1.8.0
 
+  # Pinned deadcode version (golang.org/x/tools) for `deadcode`. Bump it the
+  # same way as GOVULNCHECK_VERSION.
+  DEADCODE_VERSION: v0.52.0
+
 tasks:
   default:
     desc: Default task - show available tasks
@@ -58,6 +62,25 @@ tasks:
     cmds:
       - golangci-lint run -v
 
+  # Markdown via rumdl, configured by .rumdl.toml at the repo root. rumdl is a
+  # standalone binary with no `go run pkg@version` equivalent, so it is not
+  # pinned: whatever is installed is used (rumdl rarely changes rule defaults).
+  md:lint:
+    desc: Lint Markdown files with rumdl (writes nothing; for CI)
+    preconditions: &rumdl-installed
+      - sh: command -v rumdl
+        msg: "rumdl is not installed: brew install rumdl (or cargo install rumdl)"
+    cmds:
+      - rumdl check .
+
+  # `check --fix` rather than `rumdl fmt`: both fix what they can, but `fmt`
+  # exits 0 even when unfixable findings remain, which would look like success.
+  md:fmt:
+    desc: Fix Markdown files with rumdl, then report what it could not fix
+    preconditions: *rumdl-installed
+    cmds:
+      - rumdl check --fix .
+
   # `go run pkg@version` instead of a `tool` directive in go.mod: the version
   # is pinned and checksum-verified, and a library doesn't pass a dev tool's
   # dependencies on to the modules that import it.
@@ -65,6 +88,23 @@ tasks:
     desc: Scan dependencies for known vulnerabilities (pinned govulncheck)
     cmds:
       - go run golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}} ./...
+
+  # deadcode finds functions no `main` or test can reach, exported or not;
+  # golangci-lint's `unused` only sees unexported ones. -test makes tests entry
+  # points: a library has no `main`, and test-only seams are not dead.
+  # Limits: functions only (no types, vars, consts); one GOOS/GOARCH and tag
+  # set per run, so code for another platform can show up as dead; a dead
+  # method may still satisfy an interface, so judge each finding. To see why a
+  # function is NOT reported, run deadcode with -whylive=<pkg.Func>.
+  #
+  # deadcode exits 0 even when it reports something, so its output decides.
+  # `|| exit` keeps a failed `go run` (e.g. no network) from passing silently.
+  deadcode:
+    desc: Report functions no program or test can reach (fails on any)
+    cmds:
+      - |
+        out="$(go run golang.org/x/tools/cmd/deadcode@{{.DEADCODE_VERSION}} -test ./...)" || exit $?
+        if [ -n "$out" ]; then echo "$out"; exit 1; fi
 
   deps:
     desc: Download and verify dependencies
