@@ -61,8 +61,11 @@ vars:
   # commit, with "-dirty" for uncommitted changes; "dev" outside a git repo.
   BUILD_VERSION:
     sh: echo "${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+  # GIT_COMMIT is the commit stamped into the binary; a COMMIT environment
+  # variable wins. Both values are resolved once here so LDFLAGS and the
+  # build's up-to-date stamp (STAMP in `build`) always agree.
   GIT_COMMIT:
-    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
+    sh: echo "${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
   BUILD_DATE:
     sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
 
@@ -76,7 +79,7 @@ vars:
         exit 0
       fi
       VERSION_VALUE="{{.BUILD_VERSION}}"
-      COMMIT_VALUE="${COMMIT:-{{.GIT_COMMIT}}}"
+      COMMIT_VALUE="{{.GIT_COMMIT}}"
       BUILD_DATE_VALUE="${BUILD_DATE:-{{.BUILD_DATE}}}"
       echo "-s -w \
       -X {{.APPMETA_MODULE_PATH}}.Name={{.APP_NAME}} \
@@ -106,9 +109,13 @@ tasks:
       GOHOST: "GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}}"
       BIN_DIR: "bin/{{.TARGET_OS}}-{{.TARGET_ARCH}}"
       BIN_PATH: "{{.BIN_DIR}}/{{.BIN_NAME}}"
+      # What the binary's version stamp would be. BUILD_DATE is left out on
+      # purpose, or the binary would never be up to date.
+      STAMP: "{{.BUILD_VERSION}} {{.GIT_COMMIT}}"
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - "{{.CGO}} {{.GOHOST}} go build -a -trimpath -ldflags='{{.LDFLAGS}}' -o {{.BIN_PATH}} cmd/{{.APP_NAME}}/main.go"
+      - echo "{{.STAMP}}" > {{.BIN_PATH}}.stamp
     sources:
       # Add any files pulled in with go:embed. They change the binary, but
       # Task only sees what is listed here, so an edit to one would leave a
@@ -118,6 +125,11 @@ tasks:
       - go.sum
     generates:
       - "{{.BIN_PATH}}"
+    # Task skips the build only when sources AND status both pass. Sources say
+    # whether the code changed; this says whether the version stamp did, so a
+    # new commit or tag rebuilds even when no Go file changed.
+    status:
+      - test "$(cat {{.BIN_PATH}}.stamp 2>/dev/null)" = "{{.STAMP}}"
 
   build:all:
     desc: Build the binary for all release targets ({{.RELEASE_TARGETS}})
