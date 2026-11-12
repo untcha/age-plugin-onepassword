@@ -49,3 +49,8 @@ func resolveVersion(stamped string, info *debug.BuildInfo) string {
 func String() string {
 	return fmt.Sprintf("%s (commit %s, built %s)", Version, Commit, BuildDate)
 }
+
+// UserAgent returns the User-Agent for outbound API clients, e.g. "tool/v1.2.0".
+func UserAgent() string {
+	return Name + "/" + Version
+}

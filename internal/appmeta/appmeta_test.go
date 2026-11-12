@@ -74,3 +74,13 @@ func TestStringIncludesAllFields(t *testing.T) {
 		}
 	}
 }
+
+func TestUserAgent(t *testing.T) {
+	oldName, oldVersion := Name, Version
+	t.Cleanup(func() { Name, Version = oldName, oldVersion })
+
+	Name, Version = "tool", "v1.2.3"
+	if got, want := UserAgent(), "tool/v1.2.3"; got != want {
+		t.Fatalf("UserAgent() = %q, want %q", got, want)
+	}
+}
