@@ -6,7 +6,7 @@ How to collaborate, communicate, and approach problems.
 
 - Chat replies: extremely concise, sacrifice grammar for concision. Files (README, docs,
   comments) use normal, clear prose.
-- Be solution-oriented, pragmatic, direct, and honest. Don't sugarcoat technical issues.
+- Be direct and honest; don't sugarcoat technical issues.
 - Skip long intros/summaries, focus on essentials, use short sections and bullets.
 - Prefer the simplest working solution. Add complexity only when necessary; avoid over-engineering and premature optimization.
 - Aim for deterministic, predictable behavior (same input → same output).
@@ -177,7 +177,6 @@ Secure-by-default, least-privilege.
   time. A secret value in an environment variable is readable by anyone who can
   describe the function, and it lands in Terraform state.
 - Validate input at trust boundaries.
-- Avoid insecure defaults and unsafe patterns.
 
 ---
 
@@ -188,7 +187,6 @@ Design for running, troubleshooting, and maintaining in production.
 - Structured logging, observability/metrics, robust error handling, debuggability.
 - Prefer stateless, cloud-native services; design for failure; favor automation.
 - Keep clear boundaries between components and explicit configuration.
-- Optimize for operational simplicity, scalability, and resilience.
 - Never run `terraform`/`terragrunt`/`tofu` commands that can modify
   infrastructure without explicit approval. Read-only commands are fine.
 
@@ -221,4 +219,4 @@ For any library, framework, tooling, or version-specific question:
 
 ## Meta
 
-Version: v0.7.1 | Updated: 2026-11-12 | Author: Alex Untch
+Version: v0.7.2 | Updated: 2026-11-18 | Author: Alex Untch
