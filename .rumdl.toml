@@ -1,0 +1,10 @@
+# Source: https://github.com/untcha/meta (.rumdl.toml)
+# Markdown lint config for `task md:lint` / `task md:fmt`. A repo-level config
+# makes rumdl ignore ~/.config/rumdl/rumdl.toml entirely, so results are the
+# same on every machine and in CI.
+
+[global]
+# Prose is wrapped by hand, and tables and URLs cannot be wrapped at all.
+disable = ["MD013"]
+# Generated or vendored Markdown, if any.
+exclude = []

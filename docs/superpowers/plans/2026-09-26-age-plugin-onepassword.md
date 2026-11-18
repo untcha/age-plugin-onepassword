@@ -63,11 +63,13 @@ e2e/roundtrip_test.go                 # //go:build integration
 ### Task 1: Project scaffold and build metadata
 
 **Files:**
+
 - Create: `go.mod`, `Taskfile.yml`, `taskfiles/common.yml`, `taskfiles/Taskfile.project.yml`, `.golangci.yml`, `.gitignore`, `LICENSE`
 - Create: `internal/appmeta/appmeta.go`
 - Test: `internal/appmeta/appmeta_test.go`
 
 **Interfaces:**
+
 - Produces: `appmeta.Version`, `appmeta.Commit`, `appmeta.BuildDate` (string vars), `appmeta.String() string`.
 
 - [ ] **Step 1: Init module and copy templates**
@@ -188,7 +190,7 @@ Expected: `ok`, lint clean, `No vulnerabilities found.`, task list includes `bui
 
 - [ ] **Step 7: Propose commit**
 
-```
+```text
 build 🏗(scaffold): init module, tooling and build metadata
 
 Initialise the Go module (Go 1.27.1) and vendor the shared tooling
@@ -203,14 +205,15 @@ internal/appmeta as the single source of build metadata.
 ### Task 2: Test key helpers and stanza tags
 
 **Files:**
+
 - Create: `internal/testutil/keys.go`
 - Create: `internal/identity/tag.go`
 - Test: `internal/identity/tag_test.go`
 
 **Interfaces:**
+
 - Produces (testutil): `type Key struct{ PublicKey ssh.PublicKey; PrivatePEM []byte; AuthorizedKey string; Recipient age.Recipient }`, `Ed25519(t testing.TB) Key`, `RSA(t testing.TB) Key`, `(Key) Fingerprint() string`, `Wrap(t testing.TB, fileKey []byte, rs ...age.Recipient) []*age.Stanza`, `FileKey() []byte`.
 - Produces (identity): `TagFromFingerprint(fp string) (string, error)`, `TagFromPubKey(pk ssh.PublicKey) string`, `StanzaTags(stanzas []*age.Stanza) map[string]bool`.
-
 - [ ] **Step 1: Add dependencies**
 
 ```bash
@@ -488,7 +491,7 @@ Expected: `ok`, lint clean.
 
 - [ ] **Step 7: Propose commit**
 
-```
+```text
 feat ✨(identity): derive age stanza tags from 1Password fingerprints
 
 Add tag helpers that map a 1Password "SHA256:" fingerprint and an SSH
@@ -502,13 +505,16 @@ Ed25519 and RSA keys and wrap file keys for recipients.
 ### Task 3: 1Password boundary types and in-memory fake
 
 **Files:**
+
 - Create: `internal/onepassword/client.go`
 - Create: `internal/onepassword/fake/fake.go`
 - Modify: `internal/testutil/keys.go` (append `FakeKey` method)
 - Test: `internal/onepassword/client_test.go`
 
 **Interfaces:**
+
 - Produces (onepassword):
+
   ```go
   type SSHKeyItem struct{ ID, Title, VaultID, VaultName, Fingerprint string }
   var ErrNotFound error
@@ -521,9 +527,9 @@ Ed25519 and RSA keys and wrap file keys for recipients.
   func ValidID(s string) bool
   func ParseItemRef(ref string) (vault, item string, err error)
   ```
+
 - Produces (fake): `type Key struct{ Item onepassword.SSHKeyItem; PublicKey, PrivateKey []byte }`, `type Client struct{ Keys []Key; Err error }` implementing `onepassword.Client`, `(*Client) Calls() []string`, `(*Client) Count(prefix string) int`. Call records: `"list"`, `"resolve <vault>/<item>"`, `"public <vaultID>/<itemID>"`, `"private <vaultID>/<itemID>"`.
 - Produces (testutil): `(Key) FakeKey(vaultID, vaultName, itemID, title string) fake.Key`.
-
 - [ ] **Step 1: Write the failing tests**
 
 `internal/onepassword/client_test.go`:
@@ -796,7 +802,7 @@ Expected: `ok` for onepassword and identity, lint clean.
 
 - [ ] **Step 7: Propose commit**
 
-```
+```text
 feat ✨(onepassword): add 1Password client boundary and fake
 
 Define the Client interface the plugin depends on (list SSH key
@@ -810,13 +816,14 @@ Add an in-memory fake that records calls for tests.
 ### Task 4: Identity encoding (default + pinned payload v1)
 
 **Files:**
+
 - Create: `internal/identity/encoding.go`
 - Test: `internal/identity/encoding_test.go`
 
 **Interfaces:**
+
 - Consumes: `onepassword.ValidID`.
 - Produces: `const PluginName = "onepassword"`, `type Pin struct{ VaultID, ItemID string; PubKey ssh.PublicKey }`, `EncodeDefault() string`, `EncodePinned(p Pin) (string, error)`, `DecodePayload(data []byte) (*Pin, error)` (nil, nil for empty payload).
-
 - [ ] **Step 1: Write the failing tests**
 
 `internal/identity/encoding_test.go`:
@@ -1074,7 +1081,7 @@ Expected: `ok`, lint clean.
 
 - [ ] **Step 5: Propose commit**
 
-```
+```text
 feat ✨(identity): encode default and pinned identities
 
 Add the plugin name, the default identity (empty payload) and a
@@ -1088,14 +1095,15 @@ and key type, so untrusted identity files cannot inject references.
 ### Task 5: Decoder and default identity (targeted lookup)
 
 **Files:**
+
 - Create: `internal/identity/decoder.go`
 - Create: `internal/identity/default.go`
 - Test: `internal/identity/default_test.go`
 
 **Interfaces:**
+
 - Consumes: `onepassword.Client`, `fake.Client`, `testutil.*`, `DecodePayload`, `StanzaTags`, `TagFromFingerprint`.
 - Produces: `NewDecoder(ctx context.Context, client onepassword.Client, logger *log.Logger) *Decoder`, `(*Decoder) Decode(data []byte) (age.Identity, error)`. Unexported for Task 6: `(*Decoder) privateKey(vaultID, itemID string) ([]byte, error)` (cached), `unwrapWithKey(key []byte, stanzas []*age.Stanza) ([]byte, error)`, fields `ctx`, `client`, `logger`.
-
 - [ ] **Step 1: Add dependency**
 
 ```bash
@@ -1444,7 +1452,7 @@ Expected: `ok`, lint clean.
 
 - [ ] **Step 7: Propose commit**
 
-```
+```text
 feat ✨(identity): decrypt with only the matching 1Password key
 
 Add the Decoder and the default identity. Unwrap collects SSH stanza
@@ -1459,13 +1467,14 @@ to the next match, and keys are cached per process.
 ### Task 6: Pinned identity
 
 **Files:**
+
 - Modify (replace entirely): `internal/identity/pinned.go`
 - Test: `internal/identity/pinned_test.go`
 
 **Interfaces:**
+
 - Consumes: `Decoder.privateKey`, `Decoder.client/ctx/logger`, `unwrapWithKey`, `TagFromPubKey`, `StanzaTags`, `onepassword.ErrNotFound`, `EncodePinned`.
 - Produces: `pinnedIdentity.Unwrap` behaviour (via `Decoder.Decode` with a pinned payload).
-
 - [ ] **Step 1: Write the failing tests**
 
 `internal/identity/pinned_test.go`:
@@ -1676,7 +1685,7 @@ Expected: `ok`, lint clean.
 
 - [ ] **Step 5: Propose commit**
 
-```
+```text
 feat ✨(identity): add pinned identity with one 1Password call
 
 A pinned identity stores vault ID, item ID and public key. Unwrap
@@ -1691,17 +1700,18 @@ match the pinned public key.
 ### Task 7: op CLI client and fake op binary
 
 **Files:**
+
 - Create: `internal/onepassword/op.go`
 - Create: `internal/onepassword/fakeop/main.go`
 - Create: `internal/testutil/fakeop.go`
 - Test: `internal/onepassword/op_test.go`
 
 **Interfaces:**
+
 - Consumes: `SSHKeyItem`, `ErrNotFound`, `ValidID`, `testutil.Key`.
 - Produces (onepassword): `type OpOptions struct{ Bin, Vault, Account string; Timeout time.Duration; Logger *log.Logger }`, `NewOpClient(opts OpOptions) *OpClient` implementing `Client`.
 - Produces (testutil): `type OpItem struct{ Key Key; VaultID, VaultName, ItemID, Title, Fingerprint string }` (empty Fingerprint = derived), `WriteFakeOpDir(t testing.TB, items ...OpItem) string`, `Build(dir, name, pkg string) (string, error)`, `BuildFakeOp(dir string) (string, error)`.
 - fakeop env contract: `FAKEOP_DIR` (fixtures: `items.json`, `keys/<vaultID>/<itemID>/{private,public}`), `FAKEOP_LOG` (append args joined by space, one line per call), `FAKEOP_FAIL` (stderr message, exit 1), `FAKEOP_SLEEP` (duration before responding).
-
 - [ ] **Step 1: Write the fake op binary**
 
 `internal/onepassword/fakeop/main.go`:
@@ -2432,7 +2442,7 @@ Expected: all `ok`, lint clean.
 
 - [ ] **Step 7: Propose commit**
 
-```
+```text
 feat ✨(onepassword): implement Client with the op CLI
 
 OpClient lists SSH key metadata, resolves items and reads public and
@@ -2447,10 +2457,12 @@ references. Add a fake op binary and fixture helpers for tests.
 ### Task 8: Configuration
 
 **Files:**
+
 - Create: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 
 **Interfaces:**
+
 - Produces: `const EnvPrefix = "AGE_PLUGIN_ONEPASSWORD"`, `type Config struct{ Vault, Account, OpPath string; Timeout time.Duration; LogFile string; LogLevel log.Level }`, `Load(path string) (Config, error)`, `DefaultPath() (string, error)`. `OpPath` and `LogFile` are already resolved (absolute, `~/` expanded; `OpPath` may be a bare name).
 
 - [ ] **Step 1: Add dependency**
@@ -2817,7 +2829,7 @@ Expected: `ok`, lint clean.
 
 - [ ] **Step 6: Propose commit**
 
-```
+```text
 feat ✨(config): resolve settings from env and XDG config file
 
 age starts plugins without user flags, so vault, account, op path,
@@ -2833,16 +2845,17 @@ malformed files and a missing explicit path are errors.
 ### Task 9: Plugin wiring, CLI commands and entrypoint
 
 **Files:**
+
 - Create: `internal/plugin/plugin.go`, `internal/plugin/plugin_test.go`
 - Create: `internal/cli/root.go`, `internal/cli/identity.go`, `internal/cli/recipients.go`, `internal/cli/version.go`, `internal/cli/output.go`
 - Create: `cmd/age-plugin-onepassword/main.go`
 - Test: `internal/cli/cli_test.go`
 
 **Interfaces:**
+
 - Consumes: `identity.NewDecoder`, `identity.PluginName`, `identity.EncodeDefault`, `identity.EncodePinned`, `identity.Pin`, `identity.DecodePayload`, `onepassword.Client`, `onepassword.NewOpClient`, `onepassword.OpOptions`, `onepassword.ParseItemRef`, `config.Load`, `config.Config`, `appmeta.*`.
 - Produces (plugin): `type IdentityDecoder func(data []byte) (age.Identity, error)`, `Run(name, stateMachine string, decode IdentityDecoder, stdin io.Reader, stdout, stderr io.Writer) (int, error)`.
 - Produces (cli): `type Options struct{ Stdin io.Reader; Stdout, Stderr io.Writer; NewClient func(config.Config, *log.Logger) onepassword.Client }`, `Execute(ctx context.Context, args []string, opts Options) int`.
-
 - [ ] **Step 1: Add dependency**
 
 ```bash
@@ -3691,17 +3704,19 @@ func main() {
 - [ ] **Step 11: Verify**
 
 Run:
+
 ```bash
 go mod tidy
 go test ./... && task lint && task build
 ./bin/$(go env GOOS)-$(go env GOARCH)/age-plugin-onepassword identity
 ./bin/$(go env GOOS)-$(go env GOARCH)/age-plugin-onepassword --version
 ```
+
 Expected: all tests `ok`, lint clean; `identity` prints the two comment lines and `AGE-PLUGIN-ONEPASSWORD-10K6MQ2`; `--version` prints `age-plugin-onepassword dev (commit …, built …)`.
 
 - [ ] **Step 12: Propose commit**
 
-```
+```text
 feat ✨(cli): add identity, recipients, version and plugin mode
 
 Wire the age identity-v1 state machine to the 1Password-backed
@@ -3717,10 +3732,12 @@ AGEDEBUG=plugin, to stderr at debug level.
 ### Task 10: End-to-end round trip with the real age CLI
 
 **Files:**
+
 - Modify: `go.mod` (add `tool filippo.io/age/cmd/age`)
 - Create: `e2e/roundtrip_test.go`
 
 **Interfaces:**
+
 - Consumes: `testutil.Build`, `testutil.BuildFakeOp`, `testutil.WriteFakeOpDir`, `testutil.OpItem`, `testutil.Ed25519`.
 
 - [ ] **Step 1: Pin the age CLI as a tool**
@@ -3887,7 +3904,7 @@ Expected: fmt, lint and tests clean; `test:unit` runs all unit tests (none start
 
 - [ ] **Step 5: Propose commit**
 
-```
+```text
 test 🧪(e2e): round trip through the real age CLI
 
 Build the plugin, a pinned age CLI (Go tool dependency) and the fake
@@ -3902,9 +3919,9 @@ and no private key read for files addressed to other keys.
 ### Task 11: README and real 1Password verification
 
 **Files:**
+
 - Modify: `README.md` (replace the existing stub)
 - Possibly modify: `internal/onepassword/op.go` (`isNotFound`), `internal/onepassword/fakeop/main.go` (messages), `internal/onepassword/op_test.go` — only if real `op` output differs.
-
 - [ ] **Step 1: Write README**
 
 Replace the stub `README.md` with:
@@ -4063,10 +4080,10 @@ op item get doesnotexist --vault "<vault>" --format json; echo "exit=$?"
 ```
 
 Check:
+
 - `additional_information` looks like `SHA256:<43 base64 chars>`.
 - `category` is `SSH_KEY`; `vault` has `id` and `name`.
 - The two not-found commands' stderr contains `isn't an item` (or `isn't a vault`). If the wording differs, update `isNotFound` in `op.go`, the matching messages in `fakeop/main.go`, and re-run `go test ./...`.
-
 - [ ] **Step 3: Manual round trip (user runs)**
 
 ```sh
@@ -4089,7 +4106,7 @@ Expected: all green; binaries for linux/amd64, darwin/arm64, darwin/amd64 under 
 
 - [ ] **Step 5: Propose commit**
 
-```
+```text
 docs 📚(readme): document usage, configuration and security
 
 Describe install via task project:install, encrypting with SSH
