@@ -225,6 +225,7 @@ Global flags: `--debug` (= `log_level=debug`), `--config FILE`.
   # Recipient: ssh-ed25519 AAAA…
   AGE-PLUGIN-ONEPASSWORD-1…
   ```
+
 - `-o FILE`: `O_WRONLY|O_CREATE|O_EXCL`, mode `0600`; `-` or unset → stdout.
 - `recipients`: `ListSSHKeys` + `PublicKey` per item. Text:
   `op://<vault name>/<item title>: ssh-ed25519 AAAA…`, sorted by vault then
