@@ -259,20 +259,24 @@ func TestRecipientsCommand(t *testing.T) {
 	}
 }
 
+// TestRecipientsSkipsFingerprintMismatch covers #7: a skipped item must not
+// vanish silently; the good items are printed and the exit code is non-zero.
 func TestRecipientsSkipsFingerprintMismatch(t *testing.T) {
 	good, stale := testutil.Ed25519(t), testutil.Ed25519(t)
 	bad := stale.FakeKey("v", "Vault", "i2", "stale")
 	bad.Item.Fingerprint = "SHA256:doesnotmatch"
 	c := &fake.Client{Keys: []fake.Key{good.FakeKey("v", "Vault", "i1", "good"), bad}}
-	code, out, errOut := run(t, c, "recipients")
-	if code != 0 {
-		t.Fatalf("code = %d, stderr = %s", code, errOut)
-	}
-	if want := "op://Vault/good: " + good.AuthorizedKey + "\n"; out != want {
-		t.Fatalf("out = %q, want %q", out, want)
-	}
-	if !strings.Contains(errOut, "stale") {
-		t.Fatalf("stderr = %q, want a warning naming the skipped item", errOut)
+	for _, args := range [][]string{{"recipients"}, {"recipients", "--json"}} {
+		code, out, errOut := run(t, c, args...)
+		if code != 1 {
+			t.Fatalf("%v: code = %d, want 1", args, code)
+		}
+		if !strings.Contains(out, good.AuthorizedKey) || strings.Contains(out, stale.AuthorizedKey) {
+			t.Fatalf("%v: out = %q, want only the good key", args, out)
+		}
+		if !strings.Contains(errOut, "stale") || !strings.Contains(errOut, "1 of 2 SSH Key items skipped") {
+			t.Fatalf("%v: stderr = %q, want the warning and the skip error", args, errOut)
+		}
 	}
 }
 
