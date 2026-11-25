@@ -35,17 +35,24 @@ func newRecipientsCmd(a *app) *cobra.Command {
 				return err
 			}
 			defer closeLog()
-			rs, err := listRecipients(cmd.Context(), a.opts.NewClient(cfg, logger), logger)
+			rs, skipped, err := listRecipients(cmd.Context(), a.opts.NewClient(cfg, logger), logger)
 			if err != nil {
 				return err
 			}
 			if asJSON {
 				enc := json.NewEncoder(a.opts.Stdout)
 				enc.SetIndent("", "  ")
-				return enc.Encode(rs)
+				if err := enc.Encode(rs); err != nil {
+					return err
+				}
+			} else {
+				for _, r := range rs {
+					fmt.Fprintf(a.opts.Stdout, "op://%s/%s: %s\n", r.Vault, r.Item, r.PublicKey)
+				}
 			}
-			for _, r := range rs {
-				fmt.Fprintf(a.opts.Stdout, "op://%s/%s: %s\n", r.Vault, r.Item, r.PublicKey)
+			// Print what worked, but fail so scripts notice the list is incomplete.
+			if skipped > 0 {
+				return fmt.Errorf("%d of %d SSH Key items skipped, output is incomplete", skipped, skipped+len(rs))
 			}
 			return nil
 		},
@@ -54,24 +61,28 @@ func newRecipientsCmd(a *app) *cobra.Command {
 	return cmd
 }
 
-// listRecipients returns public keys sorted by vault, item title and item ID.
-func listRecipients(ctx context.Context, client onepassword.Client, logger *log.Logger) ([]recipient, error) {
+// listRecipients returns public keys sorted by vault, item title and item ID,
+// and how many items were skipped because no public key matched them.
+func listRecipients(
+	ctx context.Context, client onepassword.Client, logger *log.Logger,
+) (rs []recipient, skipped int, err error) {
 	items, err := client.ListSSHKeys(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list SSH keys in 1Password: %w", err)
+		return nil, 0, fmt.Errorf("list SSH keys in 1Password: %w", err)
 	}
 	pubs, err := client.PublicKeys(ctx, items)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("list recipients: %w", ctx.Err())
+			return nil, 0, fmt.Errorf("list recipients: %w", ctx.Err())
 		}
-		return nil, fmt.Errorf("read public keys from 1Password: %w", err)
+		return nil, 0, fmt.Errorf("read public keys from 1Password: %w", err)
 	}
-	rs := make([]recipient, 0, len(items))
+	rs = make([]recipient, 0, len(items))
 	for _, it := range items {
 		pub, ok := pubs[it.Fingerprint]
 		if !ok {
 			logger.Warn("skipping item: no public key matches its fingerprint", "item", it.Title, "vault", it.VaultName)
+			skipped++
 			continue
 		}
 		rs = append(rs, recipient{
@@ -85,5 +96,5 @@ func listRecipients(ctx context.Context, client onepassword.Client, logger *log.
 	slices.SortFunc(rs, func(x, y recipient) int {
 		return cmp.Or(cmp.Compare(x.Vault, y.Vault), cmp.Compare(x.Item, y.Item), cmp.Compare(x.ItemID, y.ItemID))
 	})
-	return rs, nil
+	return rs, skipped, nil
 }
