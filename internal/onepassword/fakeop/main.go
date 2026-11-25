@@ -17,7 +17,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 )
@@ -34,10 +33,10 @@ type item struct {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	if err := logCall(args); err != nil {
 		fmt.Fprintln(stderr, "fakeop:", err)
 		return 2
@@ -58,8 +57,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch {
 	case len(pos) == 2 && pos[0] == "item" && pos[1] == "list":
 		return itemList(dir, flags, stdout, stderr)
-	case len(pos) == 3 && pos[0] == "item" && pos[1] == "get" && pos[2] == "-":
-		return itemGetStdin(dir, flags, stdin, stdout, stderr)
 	case len(pos) == 3 && pos[0] == "item" && pos[1] == "get":
 		return itemGet(dir, pos[2], flags["--vault"], stdout, stderr)
 	case len(pos) == 2 && pos[0] == "read":
@@ -164,57 +161,6 @@ func itemGet(dir, ref, vault string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "[ERROR] 2026/01/01 00:00:00 %q isn't an item in the %q vault. "+
 		"Specify the item with its UUID, name, or domain.\n", ref, vault)
 	return 1
-}
-
-// itemGetStdin imitates `op item get - --fields 'label=public key' --format json`
-// as verified against op 2.42.0: stdin holds a JSON array of {"id", "vault": {"id"}};
-// stdout gets one indented JSON object per item, not an array; an unknown item
-// fails the call after the items before it were printed.
-func itemGetStdin(dir string, flags map[string]string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if flags["--fields"] != "label=public key" || flags["--format"] != "json" {
-		fmt.Fprintln(stderr, "fakeop: item get - needs --fields label=public key --format json")
-		return 2
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "items.json")) //nolint:gosec // G304: test fixture path.
-	if err != nil {
-		fmt.Fprintln(stderr, "fakeop:", err)
-		return 2
-	}
-	var items, refs []item
-	if err := json.Unmarshal(raw, &items); err != nil {
-		fmt.Fprintln(stderr, "fakeop:", err)
-		return 2
-	}
-	if err := json.NewDecoder(stdin).Decode(&refs); err != nil {
-		fmt.Fprintln(stderr, "fakeop: stdin:", err)
-		return 2
-	}
-	enc := json.NewEncoder(stdout)
-	enc.SetIndent("", "  ")
-	for i, ref := range refs {
-		idx := slices.IndexFunc(items, func(it item) bool {
-			return it.ID == ref.ID && (ref.Vault.ID == "" || it.Vault.ID == ref.Vault.ID)
-		})
-		var pub []byte
-		if idx >= 0 {
-			keyFile := filepath.Join(dir, "keys", ref.Vault.ID, ref.ID, "public")
-			pub, err = os.ReadFile(keyFile) //nolint:gosec // G304: test fixture path.
-		}
-		if idx < 0 || err != nil {
-			fmt.Fprintf(stderr, "[ERROR] 2026/01/01 00:00:00 unable to process element %d: %q isn't an item. "+
-				"Specify the item with its UUID, name, or domain.\n", i+1, ref.ID)
-			return 1
-		}
-		it := items[idx]
-		_ = enc.Encode(map[string]string{
-			"id":        "public_key",
-			"type":      "STRING",
-			"label":     "public key",
-			"value":     strings.TrimRight(string(pub), "\n"),
-			"reference": "op://" + it.Vault.Name + "/" + it.Title + "/public key",
-		})
-	}
-	return 0
 }
 
 func read(dir, ref string, stdout, stderr io.Writer) int {
