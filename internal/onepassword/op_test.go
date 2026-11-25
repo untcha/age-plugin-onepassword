@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -252,81 +251,6 @@ func TestOpReadKeys(t *testing.T) {
 	if _, err := c.PrivateKey(t.Context(), "vwork", "missing"); !errors.Is(err, onepassword.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
-}
-
-func TestOpPublicKeys(t *testing.T) {
-	dir, work, private := twoVaults(t)
-	const call = "item get - --fields label=public key --format json"
-	items := []onepassword.SSHKeyItem{
-		{ID: "iwork", VaultID: "vwork"},
-		{ID: "ipriv", VaultID: "vpriv"},
-	}
-	tests := []struct {
-		name      string
-		opts      onepassword.OpOptions
-		items     []onepassword.SSHKeyItem
-		want      map[string]string
-		wantCalls []string
-	}{
-		{
-			name:  "one call for all items",
-			items: items,
-			want: map[string]string{
-				work.Fingerprint():    work.AuthorizedKey,
-				private.Fingerprint(): private.AuthorizedKey,
-			},
-			wantCalls: []string{call},
-		},
-		{
-			name:      "account",
-			opts:      onepassword.OpOptions{Account: "acme"},
-			items:     items[:1],
-			want:      map[string]string{work.Fingerprint(): work.AuthorizedKey},
-			wantCalls: []string{"--account acme " + call},
-		},
-		{name: "no items, no call", want: map[string]string{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			logPath := setup(t, dir)
-			keys, err := newClient(tt.opts).PublicKeys(t.Context(), tt.items)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := make(map[string]string, len(keys))
-			for fp, k := range keys {
-				got[fp] = string(k)
-			}
-			if !maps.Equal(got, tt.want) {
-				t.Fatalf("keys = %v, want %v", got, tt.want)
-			}
-			if got := calls(t, logPath); !slices.Equal(got, tt.wantCalls) {
-				t.Fatalf("calls = %q, want %q", got, tt.wantCalls)
-			}
-		})
-	}
-	t.Run("unknown item fails the call", func(t *testing.T) {
-		setup(t, dir)
-		missing := append(slices.Clone(items), onepassword.SSHKeyItem{ID: "missing", VaultID: "vwork"})
-		if _, err := newClient(
-			onepassword.OpOptions{},
-		).PublicKeys(t.Context(), missing); !errors.Is(
-			err,
-			onepassword.ErrNotFound,
-		) {
-			t.Fatalf("err = %v, want ErrNotFound", err)
-		}
-	})
-	t.Run("invalid ID, no exec", func(t *testing.T) {
-		logPath := setup(t, dir)
-		bad := []onepassword.SSHKeyItem{{ID: "../x", VaultID: "vwork"}}
-		if _, err := newClient(onepassword.OpOptions{}).PublicKeys(t.Context(), bad); err == nil {
-			t.Fatal("expected error")
-		}
-		if got := calls(t, logPath); got != nil {
-			t.Fatalf("calls = %q, want none", got)
-		}
-	})
 }
 
 func TestOpRejectsInvalidIDsWithoutExec(t *testing.T) {

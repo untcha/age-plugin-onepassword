@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
-
 	"github.com/untcha/age-plugin-onepassword/internal/onepassword"
 )
 
@@ -60,28 +58,6 @@ func (c *Client) PublicKey(_ context.Context, vaultID, itemID string) ([]byte, e
 		return nil, err
 	}
 	return k.PublicKey, nil
-}
-
-// PublicKeys keys each item's public key by the fingerprint computed from it,
-// like OpClient, so a mismatching Item.Fingerprint is not found.
-func (c *Client) PublicKeys(_ context.Context, items []onepassword.SSHKeyItem) (map[string][]byte, error) {
-	c.calls = append(c.calls, fmt.Sprintf("public-keys %d", len(items)))
-	if c.Err != nil {
-		return nil, c.Err
-	}
-	keys := make(map[string][]byte, len(items))
-	for _, it := range items {
-		k, err := c.find(it.VaultID, it.ID)
-		if err != nil {
-			return nil, err
-		}
-		pub, _, _, _, err := ssh.ParseAuthorizedKey(k.PublicKey)
-		if err != nil {
-			continue
-		}
-		keys[ssh.FingerprintSHA256(pub)] = k.PublicKey
-	}
-	return keys, nil
 }
 
 func (c *Client) PrivateKey(_ context.Context, vaultID, itemID string) ([]byte, error) {

@@ -74,7 +74,7 @@ func newRecipientsCmd(a *app) *cobra.Command {
 }
 
 // listRecipients returns public keys sorted by vault, item title and item ID,
-// and how many items were skipped because no public key matched them.
+// and how many items were skipped because their public key could not be read.
 func listRecipients(
 	ctx context.Context, client onepassword.Client, logger *log.Logger,
 ) (rs []recipient, skipped int, err error) {
@@ -82,18 +82,15 @@ func listRecipients(
 	if err != nil {
 		return nil, 0, fmt.Errorf("list SSH keys in 1Password: %w", err)
 	}
-	pubs, err := client.PublicKeys(ctx, items)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, 0, fmt.Errorf("list recipients: %w", ctx.Err())
-		}
-		return nil, 0, fmt.Errorf("read public keys from 1Password: %w", err)
-	}
 	rs = make([]recipient, 0, len(items))
 	for _, it := range items {
-		pub, ok := pubs[it.Fingerprint]
-		if !ok {
-			logger.Warn("skipping item: no public key matches its fingerprint", "item", it.Title, "vault", it.VaultName)
+		// One read per item: op's bulk `item get -` measured no faster (#6).
+		pub, err := client.PublicKey(ctx, it.VaultID, it.ID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, 0, fmt.Errorf("list recipients: %w", ctx.Err())
+			}
+			logger.Warn("skipping item: cannot read public key", "item", it.Title, "vault", it.VaultName, "err", err)
 			skipped++
 			continue
 		}

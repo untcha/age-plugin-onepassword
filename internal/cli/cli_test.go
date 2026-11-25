@@ -23,7 +23,7 @@ import (
 	"github.com/untcha/age-plugin-onepassword/internal/testutil"
 )
 
-func run(t *testing.T, c *fake.Client, args ...string) (code int, stdout, stderr string) {
+func run(t *testing.T, c onepassword.Client, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	var out, errb bytes.Buffer
@@ -244,7 +244,7 @@ func TestRecipientsCommand(t *testing.T) {
 	if n := c.Count("private"); n != 0 {
 		t.Fatalf("private key reads = %d, want 0", n)
 	}
-	if got, want := c.Calls(), []string{"list", "public-keys 2"}; !slices.Equal(got, want) {
+	if got, want := c.Calls(), []string{"list", "public vw/iw", "public vp/ip"}; !slices.Equal(got, want) {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}
 
@@ -294,28 +294,45 @@ func TestRecipientsReferenceResolves(t *testing.T) {
 	}
 }
 
-// TestRecipientsSkipsFingerprintMismatch covers #7: a skipped item must not
-// vanish silently; the good items are printed and the exit code is non-zero.
-func TestRecipientsSkipsFingerprintMismatch(t *testing.T) {
-	good, stale := testutil.Ed25519(t), testutil.Ed25519(t)
-	bad := stale.FakeKey("v", "Vault", "i2", "stale")
-	bad.Item.Fingerprint = "SHA256:doesnotmatch"
-	c := &fake.Client{Keys: []fake.Key{good.FakeKey("v", "Vault", "i1", "good"), bad}}
+// failingReadClient fails PublicKey for one item, like an op read error.
+type failingReadClient struct {
+	*fake.Client
+	itemID string
+}
+
+func (c failingReadClient) PublicKey(ctx context.Context, vaultID, itemID string) ([]byte, error) {
+	if itemID == c.itemID {
+		return nil, errors.New("op read: boom")
+	}
+	return c.Client.PublicKey(ctx, vaultID, itemID)
+}
+
+// TestRecipientsSkippedItemFails covers #7: a skipped item must not vanish
+// silently; the good items are printed and the exit code is non-zero.
+func TestRecipientsSkippedItemFails(t *testing.T) {
+	good, broken := testutil.Ed25519(t), testutil.Ed25519(t)
+	c := failingReadClient{
+		Client: &fake.Client{Keys: []fake.Key{
+			good.FakeKey("v", "Vault", "i1", "good"),
+			broken.FakeKey("v", "Vault", "i2", "broken"),
+		}},
+		itemID: "i2",
+	}
 	for _, args := range [][]string{{"recipients"}, {"recipients", "--json"}} {
 		code, out, errOut := run(t, c, args...)
 		if code != 1 {
 			t.Fatalf("%v: code = %d, want 1", args, code)
 		}
-		if !strings.Contains(out, good.AuthorizedKey) || strings.Contains(out, stale.AuthorizedKey) {
+		if !strings.Contains(out, good.AuthorizedKey) || strings.Contains(out, broken.AuthorizedKey) {
 			t.Fatalf("%v: out = %q, want only the good key", args, out)
 		}
-		if !strings.Contains(errOut, "stale") || !strings.Contains(errOut, "1 of 2 SSH Key items skipped") {
+		if !strings.Contains(errOut, "broken") || !strings.Contains(errOut, "1 of 2 SSH Key items skipped") {
 			t.Fatalf("%v: stderr = %q, want the warning and the skip error", args, errOut)
 		}
 	}
 }
 
-// cancelingClient lists one SSH key, then cancels ctx before PublicKeys fails,
+// cancelingClient lists one SSH key, then cancels ctx before PublicKey fails,
 // simulating a Ctrl-C/timeout landing mid-loop.
 type cancelingClient struct {
 	cancel context.CancelFunc
@@ -331,12 +348,8 @@ func (c cancelingClient) ResolveSSHKey(context.Context, string, string) (onepass
 }
 
 func (c cancelingClient) PublicKey(context.Context, string, string) ([]byte, error) {
-	return nil, errors.New("not used")
-}
-
-func (c cancelingClient) PublicKeys(context.Context, []onepassword.SSHKeyItem) (map[string][]byte, error) {
 	c.cancel()
-	return nil, errors.New("op item get: interrupted")
+	return nil, errors.New("op read: interrupted")
 }
 
 func (c cancelingClient) PrivateKey(context.Context, string, string) ([]byte, error) {
