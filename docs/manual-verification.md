@@ -5,6 +5,20 @@ CLI. Re-run it after significant `op` upgrades or changes to `internal/onepasswo
 
 ## Last run
 
+2026-11-25, `op` 2.42.0, macOS, plugin v0.5.1 — steps 3–5 and 8 with an item titled `-backup`;
+all passed:
+
+| Check | Result |
+|---|---|
+| `recipients` text output | `op://<vault ID>/<item ID> (TEMP/-backup): ssh-ed25519 …`, exit 0 |
+| `recipients` op calls | one `item list` + one `read` per key |
+| `identity --key` with the printed ID reference | pins the item (`# Item: TEMP/-backup`) |
+| `identity --key "op://TEMP/-backup"` | pins the item (#9) |
+| Decrypt with both pinned identities and `-j onepassword` | all decrypt |
+| `recipients` and `-j onepassword` with the account option set | both work (`--account` before the subcommand) |
+
+## Earlier run, same day
+
 2026-11-25, `op` 2.42.0, macOS — partial run for the bulk public-key fetch (issue #6, step 1)
 and titles starting with `-` (issue #9, step 8); all confirmed. The bulk fetch was reverted in
 v0.5.1 because it measured no faster; its rows stay here so it is not retried blindly:
@@ -16,7 +30,8 @@ v0.5.1 because it measured no faster; its rows stay here so it is not retried bl
 | `reference` | vault and item **names**, not IDs |
 | Full item without `--fields` | includes `private_key` |
 | Unknown ID in the input | valid items printed, then `isn't an item`, exit 1 |
-| `recipients` (6 keys): bulk `item get -` vs one `read` per key | no faster, ~2.1 s both; `item list` alone takes ~1.3 s |
+| `recipients` (6 keys): bulk `item get -` vs one `read` per key | no faster, ~2.1 s both; `item list` alone takes ~1.1–1.5 s |
+| Single `op read` | ~0.85 s as the only read, so the first call pays a one-off cost; later reads are much faster |
 | `op item get -backup --vault V` (old argument order) | `unknown shorthand flag: 'b' in -backup` |
 | `op item get --vault V --format json -- -backup` | resolves the item |
 | `op --account A item get … -- -backup` | resolves the item |
