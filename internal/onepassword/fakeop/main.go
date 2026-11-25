@@ -49,7 +49,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "[ERROR] 2026/01/01 00:00:00 %s\n", msg)
 		return 1
 	}
-	pos, flags := parseArgs(args)
+	pos, flags, err := parseArgs(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "[ERROR] 2026/01/01 00:00:00 %v\n", err)
+		return 1
+	}
 	dir := os.Getenv("FAKEOP_DIR")
 	switch {
 	case len(pos) == 2 && pos[0] == "item" && pos[1] == "list":
@@ -81,11 +85,16 @@ func logCall(args []string) error {
 }
 
 // parseArgs splits args into positionals and "--flag value" / "--flag=value" pairs.
-func parseArgs(args []string) (pos []string, flags map[string]string) {
+// Like op, everything after "--" is positional, and a single-dash argument
+// before it is an unknown shorthand flag.
+func parseArgs(args []string) (pos []string, flags map[string]string, err error) {
 	flags = make(map[string]string)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if strings.HasPrefix(a, "--") {
+		switch {
+		case a == "--":
+			return append(pos, args[i+1:]...), flags, nil
+		case strings.HasPrefix(a, "--"):
 			if name, val, ok := strings.Cut(a, "="); ok {
 				flags[name] = val
 				continue
@@ -95,10 +104,12 @@ func parseArgs(args []string) (pos []string, flags map[string]string) {
 				i++
 				continue
 			}
+		case len(a) > 1 && a[0] == '-':
+			return nil, nil, fmt.Errorf("unknown shorthand flag: '%c' in %s", a[1], a)
 		}
 		pos = append(pos, a)
 	}
-	return pos, flags
+	return pos, flags, nil
 }
 
 func itemList(dir string, flags map[string]string, stdout, stderr io.Writer) int {

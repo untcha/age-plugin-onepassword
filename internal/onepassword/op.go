@@ -67,7 +67,8 @@ func (c *OpClient) ListSSHKeys(ctx context.Context) ([]SSHKeyItem, error) {
 }
 
 func (c *OpClient) ResolveSSHKey(ctx context.Context, vault, item string) (SSHKeyItem, error) {
-	out, err := c.run(ctx, "item get", "item", "get", item, "--vault", vault, "--format", "json")
+	// "--" keeps titles like "-backup" from being parsed as flags (verified against op 2.42.0).
+	out, err := c.run(ctx, "item get", "item", "get", "--vault", vault, "--format", "json", "--", item)
 	if err != nil {
 		return SSHKeyItem{}, err
 	}
@@ -164,7 +165,8 @@ func (c *OpClient) run(ctx context.Context, name string, args ...string) ([]byte
 // runStdin is run with stdin fed to op; nil means no input.
 func (c *OpClient) runStdin(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error) {
 	if c.opts.Account != "" {
-		args = append(args, "--account", c.opts.Account)
+		// A global flag before the subcommand, so it never lands after "--".
+		args = append([]string{"--account", c.opts.Account}, args...)
 	}
 	if c.opts.Timeout > 0 {
 		var cancel context.CancelFunc
