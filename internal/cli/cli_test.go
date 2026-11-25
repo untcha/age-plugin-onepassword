@@ -236,8 +236,8 @@ func TestRecipientsCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, stderr = %s", code, errOut)
 	}
-	want := "op://Private/chezmoi-age: " + private.AuthorizedKey + "\n" +
-		"op://Work/deploy: " + work.AuthorizedKey + "\n"
+	want := "op://vp/ip (Private/chezmoi-age): " + private.AuthorizedKey + "\n" +
+		"op://vw/iw (Work/deploy): " + work.AuthorizedKey + "\n"
 	if out != want {
 		t.Fatalf("out =\n%s\nwant\n%s", out, want)
 	}
@@ -256,6 +256,41 @@ func TestRecipientsCommand(t *testing.T) {
 	if len(got) != 2 || got[0]["vault"] != "Private" || got[0]["item_id"] != "ip" ||
 		got[1]["public_key"] != work.AuthorizedKey {
 		t.Fatalf("json = %v", got)
+	}
+}
+
+// TestRecipientsReferenceResolves covers #8: each printed reference must pin
+// exactly its item with identity --key, even when titles repeat.
+func TestRecipientsReferenceResolves(t *testing.T) {
+	first, second := testutil.Ed25519(t), testutil.Ed25519(t)
+	c := &fake.Client{Keys: []fake.Key{
+		first.FakeKey("v1", "Private", "i1", "laptop"),
+		second.FakeKey("v1", "Private", "i2", "laptop"),
+	}}
+	code, out, errOut := run(t, c, "recipients")
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errOut)
+	}
+	want := map[string]testutil.Key{"op://v1/i1": first, "op://v1/i2": second}
+	lines := slices.Collect(strings.Lines(out))
+	if len(lines) != len(want) {
+		t.Fatalf("out = %q, want %d lines", out, len(want))
+	}
+	for _, line := range lines {
+		ref, pub, _ := strings.Cut(strings.TrimSpace(line), " (Private/laptop): ")
+		k, ok := want[ref]
+		if !ok || pub != k.AuthorizedKey {
+			t.Fatalf("line = %q, want an ID reference with its own key", line)
+		}
+		code, id, errOut := run(t, c, "identity", "--key", ref)
+		if code != 0 {
+			t.Fatalf("identity --key %s: code = %d, stderr = %s", ref, code, errOut)
+		}
+		pin := decodePin(t, identityLine(t, id))
+		if got := "op://" + pin.VaultID + "/" + pin.ItemID; got != ref ||
+			!bytes.Equal(pin.PubKey.Marshal(), k.PublicKey.Marshal()) {
+			t.Fatalf("identity --key %s pinned %s", ref, got)
+		}
 	}
 }
 

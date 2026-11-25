@@ -32,8 +32,12 @@ List SSH public keys in 1Password:
 
 ```sh
 age-plugin-onepassword recipients
-# op://Private/chezmoi-age: ssh-ed25519 AAAAC3Nz…
+# op://<vault ID>/<item ID> (Private/chezmoi-age): ssh-ed25519 AAAAC3Nz…
 ```
+
+The `op://` reference uses IDs, so it works with `identity --key` even when titles repeat or
+names contain `/`. The vault and item names follow in parentheses. `--json` prints both as
+separate fields.
 
 Encrypt (plain age):
 
