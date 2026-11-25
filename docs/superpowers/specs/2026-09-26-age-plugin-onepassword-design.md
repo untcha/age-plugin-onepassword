@@ -149,6 +149,7 @@ config key. Not built now.
 
 - Created by `identity --key "op://<vault>/<item>"`. Contains vault ID, item ID
   and public key — no secrets.
+
 - Payload v1 (binary, big-endian):
 
   ```text
@@ -160,6 +161,7 @@ config key. Not built now.
 
   Decode rejects: unknown version, empty or oversized fields, trailing bytes,
   pubkey types other than `ssh-ed25519` / `ssh-rsa`.
+
 - `Unwrap(stanzas)`:
   1. `TagFromPubKey(pinned) ∉ StanzaTags(stanzas)` → `ErrIncorrectIdentity`,
      zero `op` calls.
@@ -227,11 +229,14 @@ Global flags: `--debug` (= `log_level=debug`), `--config FILE`.
   ```
 
 - `-o FILE`: `O_WRONLY|O_CREATE|O_EXCL`, mode `0600`; `-` or unset → stdout.
+
 - `recipients`: `ListSSHKeys` + `PublicKey` per item. Text:
   `op://<vault name>/<item title>: ssh-ed25519 AAAA…`, sorted by vault then
   title. `--json`: array of `{vault, item, vault_id, item_id, public_key}`.
   Items whose public key read fails → warn log, skipped.
+
 - `version`: `Version`, `Commit`, `BuildDate` from `appmeta`.
+
 - Exit codes: 0 success, 1 error. Errors printed once to stderr.
 
 ## 9. Configuration (`internal/config`)

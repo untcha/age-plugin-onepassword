@@ -529,7 +529,9 @@ Ed25519 and RSA keys and wrap file keys for recipients.
   ```
 
 - Produces (fake): `type Key struct{ Item onepassword.SSHKeyItem; PublicKey, PrivateKey []byte }`, `type Client struct{ Keys []Key; Err error }` implementing `onepassword.Client`, `(*Client) Calls() []string`, `(*Client) Count(prefix string) int`. Call records: `"list"`, `"resolve <vault>/<item>"`, `"public <vaultID>/<itemID>"`, `"private <vaultID>/<itemID>"`.
+
 - Produces (testutil): `(Key) FakeKey(vaultID, vaultName, itemID, title string) fake.Key`.
+
 - [ ] **Step 1: Write the failing tests**
 
 `internal/onepassword/client_test.go`:
