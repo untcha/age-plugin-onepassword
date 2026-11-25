@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"golang.org/x/crypto/ssh"
 )
 
 var _ Client = (*OpClient)(nil)
@@ -95,6 +96,57 @@ func (c *OpClient) PublicKey(ctx context.Context, vaultID, itemID string) ([]byt
 	return bytes.TrimSpace(out), nil
 }
 
+// PublicKeys reads the public keys of items with one op call. op's output
+// carries no item IDs, only names (verified against op 2.42.0), so keys are
+// matched to items by fingerprint.
+func (c *OpClient) PublicKeys(ctx context.Context, items []SSHKeyItem) (map[string][]byte, error) {
+	keys := make(map[string][]byte, len(items))
+	if len(items) == 0 {
+		return keys, nil
+	}
+	type vaultRef struct {
+		ID string `json:"id"`
+	}
+	type itemRef struct {
+		ID    string   `json:"id"`
+		Vault vaultRef `json:"vault"`
+	}
+	refs := make([]itemRef, 0, len(items))
+	for _, it := range items {
+		if !ValidID(it.VaultID) || !ValidID(it.ID) {
+			return nil, fmt.Errorf("invalid 1Password IDs %q/%q", it.VaultID, it.ID)
+		}
+		refs = append(refs, itemRef{ID: it.ID, Vault: vaultRef{ID: it.VaultID}})
+	}
+	in, err := json.Marshal(refs)
+	if err != nil {
+		return nil, fmt.Errorf("encode op item get input: %w", err)
+	}
+	// --fields is required: without it op returns whole items, private keys included.
+	out, err := c.runStdin(ctx, in, "item get -",
+		"item", "get", "-", "--fields", "label=public key", "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	// op prints one JSON object per item, not an array.
+	dec := json.NewDecoder(bytes.NewReader(out))
+	for dec.More() {
+		var f struct {
+			Value string `json:"value"`
+		}
+		if err := dec.Decode(&f); err != nil {
+			return nil, fmt.Errorf("decode op item get: %w", err)
+		}
+		pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(f.Value))
+		if err != nil {
+			c.opts.Logger.Warn("skipping unparsable public key from op item get", "err", err)
+			continue
+		}
+		keys[ssh.FingerprintSHA256(pub)] = []byte(strings.TrimSpace(f.Value))
+	}
+	return keys, nil
+}
+
 func (c *OpClient) PrivateKey(ctx context.Context, vaultID, itemID string) ([]byte, error) {
 	ref, err := secretRef(vaultID, itemID, "private key?ssh-format=openssh")
 	if err != nil {
@@ -106,6 +158,11 @@ func (c *OpClient) PrivateKey(ctx context.Context, vaultID, itemID string) ([]by
 // run executes op and returns stdout. stdin and stderr are never inherited:
 // in plugin mode they carry the age protocol. stdout is never logged.
 func (c *OpClient) run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return c.runStdin(ctx, nil, name, args...)
+}
+
+// runStdin is run with stdin fed to op; nil means no input.
+func (c *OpClient) runStdin(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error) {
 	if c.opts.Account != "" {
 		args = append(args, "--account", c.opts.Account)
 	}
@@ -116,6 +173,9 @@ func (c *OpClient) run(ctx context.Context, name string, args ...string) ([]byte
 	}
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, c.opts.Bin, args...) //nolint:gosec // G204: op path is config; args built here.
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	start := time.Now()

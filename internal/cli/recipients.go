@@ -60,14 +60,18 @@ func listRecipients(ctx context.Context, client onepassword.Client, logger *log.
 	if err != nil {
 		return nil, fmt.Errorf("list SSH keys in 1Password: %w", err)
 	}
+	pubs, err := client.PublicKeys(ctx, items)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("list recipients: %w", ctx.Err())
+		}
+		return nil, fmt.Errorf("read public keys from 1Password: %w", err)
+	}
 	rs := make([]recipient, 0, len(items))
 	for _, it := range items {
-		pub, err := client.PublicKey(ctx, it.VaultID, it.ID)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("list recipients: %w", ctx.Err())
-			}
-			logger.Warn("skipping item: cannot read public key", "item", it.Title, "vault", it.VaultName, "err", err)
+		pub, ok := pubs[it.Fingerprint]
+		if !ok {
+			logger.Warn("skipping item: no public key matches its fingerprint", "item", it.Title, "vault", it.VaultName)
 			continue
 		}
 		rs = append(rs, recipient{

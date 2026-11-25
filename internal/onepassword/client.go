@@ -32,6 +32,10 @@ type Client interface {
 	ResolveSSHKey(ctx context.Context, vault, item string) (SSHKeyItem, error)
 	// PublicKey returns the item's public key in authorized_keys format.
 	PublicKey(ctx context.Context, vaultID, itemID string) ([]byte, error)
+	// PublicKeys returns the public keys of items in authorized_keys format,
+	// keyed by SHA-256 fingerprint ("SHA256:<base64>"). Items without a
+	// readable public key are missing from the map.
+	PublicKeys(ctx context.Context, items []SSHKeyItem) (map[string][]byte, error)
 	// PrivateKey returns the item's private key in OpenSSH format.
 	PrivateKey(ctx context.Context, vaultID, itemID string) ([]byte, error)
 }
