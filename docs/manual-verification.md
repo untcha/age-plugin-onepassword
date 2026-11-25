@@ -5,8 +5,8 @@ CLI. Re-run it after significant `op` upgrades or changes to `internal/onepasswo
 
 ## Last run
 
-2026-11-25, `op` 2.42.0, macOS — partial run for the bulk public-key fetch (issue #6, step 1);
-all confirmed:
+2026-11-25, `op` 2.42.0, macOS — partial run for the bulk public-key fetch (issue #6, step 1)
+and titles starting with `-` (issue #9, step 8); all confirmed:
 
 | Check | Result |
 |---|---|
@@ -15,6 +15,10 @@ all confirmed:
 | `reference` | vault and item **names**, not IDs |
 | Full item without `--fields` | includes `private_key` |
 | Unknown ID in the input | valid items printed, then `isn't an item`, exit 1 |
+| `op item get -backup --vault V` (old argument order) | `unknown shorthand flag: 'b' in -backup` |
+| `op item get --vault V --format json -- -backup` | resolves the item |
+| `op --account A item get … -- -backup` | resolves the item |
+| `op item get … -- -backup --account A` | `expected at most 1 arguments but got 3`, exit 1 |
 
 ## Earlier partial run
 
@@ -120,7 +124,8 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
 7. Lock the 1Password app and decrypt twice: once approving the unlock prompt (decrypts), once
    dismissing it (clear error, no hang, no stack trace).
 
-8. Create an item whose title contains `/` and pin it by name; both decrypts must work:
+8. Create items whose titles contain `/` or start with `-` and pin them by name; all decrypts
+   must work:
 
    ```sh
    op item create --category ssh --title "age-test/slash" --vault <vault> --ssh-generate-key ed25519
@@ -131,7 +136,17 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
    echo hi | age -r "$pub" -o slash.age
    age -d -i slash.id slash.age
    age -d -j onepassword slash.age
+
+   op item create --category ssh --title=-backup --vault <vault> --ssh-generate-key ed25519
+   age-plugin-onepassword identity --key "op://<vault>/-backup" -o dash.id
+   pub=$(age-plugin-onepassword recipients --json \
+     | jq -r '.[] | select(.item=="-backup") | .public_key')
+   echo hi | age -r "$pub" -o dash.age
+   age -d -i dash.id dash.age
    ```
+
+   `--title=-backup` needs the `=` form: `op` reads a separate `-backup` as a flag. For the same
+   reason the plugin passes the item after `--` and `--account` before the subcommand.
 
 9. Put an unknown key in the config file; both modes must name it:
 
@@ -146,4 +161,5 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
 
 10. Delete the test files and, if you created them, the test items:
     `op item delete age-test --vault <vault>` and
-    `op item delete "age-test/slash" --vault <vault>`.
+    `op item delete "age-test/slash" --vault <vault>` and
+    `op item delete --vault <vault> -- -backup`.

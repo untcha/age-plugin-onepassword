@@ -85,7 +85,7 @@ func TestOpListSSHKeys(t *testing.T) {
 	}{
 		{"all vaults", onepassword.OpOptions{}, []string{"iwork", "ipriv"}, base},
 		{"vault scope", onepassword.OpOptions{Vault: "Work"}, []string{"iwork"}, base + " --vault Work"},
-		{"account", onepassword.OpOptions{Account: "acme"}, []string{"iwork", "ipriv"}, base + " --account acme"},
+		{"account", onepassword.OpOptions{Account: "acme"}, []string{"iwork", "ipriv"}, "--account acme " + base},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -184,6 +184,33 @@ func TestOpResolveSSHKey(t *testing.T) {
 	}
 }
 
+// TestOpResolveSSHKeyDashTitle covers #9: a title starting with "-" must not
+// be parsed as a flag by op, also with --account set.
+func TestOpResolveSSHKeyDashTitle(t *testing.T) {
+	dir := testutil.WriteFakeOpDir(
+		t,
+		testutil.OpItem{
+			Key:       testutil.Ed25519(t),
+			VaultID:   "vtemp",
+			VaultName: "TEMP",
+			ItemID:    "idash",
+			Title:     "-backup",
+		},
+	)
+	logPath := setup(t, dir)
+	it, err := newClient(onepassword.OpOptions{Account: "acme"}).ResolveSSHKey(t.Context(), "TEMP", "-backup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.ID != "idash" {
+		t.Fatalf("resolve = %+v, want item idash", it)
+	}
+	want := []string{"--account acme item get --vault TEMP --format json -- -backup"}
+	if got := calls(t, logPath); !slices.Equal(got, want) {
+		t.Fatalf("calls = %q, want %q", got, want)
+	}
+}
+
 func TestOpResolveSSHKeyWrongCategory(t *testing.T) {
 	dir := t.TempDir()
 	login := `[{"id":"i1","title":"login","category":"LOGIN","vault":{"id":"v1","name":"V"}}]`
@@ -255,7 +282,7 @@ func TestOpPublicKeys(t *testing.T) {
 			opts:      onepassword.OpOptions{Account: "acme"},
 			items:     items[:1],
 			want:      map[string]string{work.Fingerprint(): work.AuthorizedKey},
-			wantCalls: []string{call + " --account acme"},
+			wantCalls: []string{"--account acme " + call},
 		},
 		{name: "no items, no call", want: map[string]string{}},
 	}
