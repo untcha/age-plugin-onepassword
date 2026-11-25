@@ -27,8 +27,10 @@ func newRecipientsCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "recipients",
 		Short: "List SSH public keys in 1Password, usable with age -r",
-		Long:  "Lists every SSH Key item's public key. Never reads private keys.",
-		Args:  cobra.NoArgs,
+		Long: "Lists every SSH Key item's public key. Never reads private keys.\n\n" +
+			"Each line starts with the item's op://<vault ID>/<item ID> reference, usable with\n" +
+			"identity --key, followed by the vault and item names.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, logger, closeLog, err := a.setup(false)
 			if err != nil {
@@ -46,8 +48,18 @@ func newRecipientsCmd(a *app) *cobra.Command {
 					return err
 				}
 			} else {
+				// IDs in the reference: names can repeat or contain "/", so only IDs
+				// always resolve with identity --key (#8).
 				for _, r := range rs {
-					fmt.Fprintf(a.opts.Stdout, "op://%s/%s: %s\n", r.Vault, r.Item, r.PublicKey)
+					fmt.Fprintf(
+						a.opts.Stdout,
+						"op://%s/%s (%s/%s): %s\n",
+						r.VaultID,
+						r.ItemID,
+						r.Vault,
+						r.Item,
+						r.PublicKey,
+					)
 				}
 			}
 			// Print what worked, but fail so scripts notice the list is incomplete.
