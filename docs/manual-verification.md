@@ -5,6 +5,19 @@ CLI. Re-run it after significant `op` upgrades or changes to `internal/onepasswo
 
 ## Last run
 
+2026-11-25, `op` 2.42.0, macOS — partial run for the bulk public-key fetch (issue #6, step 1);
+all confirmed:
+
+| Check | Result |
+|---|---|
+| `op item get -` with item list JSON on stdin | one JSON object per item, a stream, never an array |
+| Objects with `--fields 'label=public key'` | `id`, `type`, `label`, `value`, `reference` only; no item or vault ID |
+| `reference` | vault and item **names**, not IDs |
+| Full item without `--fields` | includes `private_key` |
+| Unknown ID in the input | valid items printed, then `isn't an item`, exit 1 |
+
+## Earlier partial run
+
 2026-11-07, `op` 2.42.0, age v1.3.2, macOS — partial run for the config-key and item-title fixes
 (steps 8 and 9); all passed:
 
@@ -45,6 +58,8 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
    op read "op://<vaultID>/doesnotexist/private key?ssh-format=openssh"
    op item get doesnotexist --vault <vault> --format json
    op item list --categories "SSH Key" --vault nosuchvault --format json
+   op item list --categories "SSH Key" --vault <vault> --format json \
+     | op item get - --fields 'label=public key' --format json
    ```
 
    - `additional_information` must be `SHA256:…` (the SSH public key fingerprint): it is how
@@ -55,6 +70,9 @@ Use a vault that holds only a test SSH key, and point the plugin at it with
      `authorization prompt dismissed` is confirmed (step 7). When you see a real
      not-signed-in, desktop-app or network error, check that its hint appears and add
      the phrase if not.
+   - The bulk `item get -` output is a stream of JSON objects, not an array, and carries no
+     item or vault ID: `recipients` matches keys to items by fingerprint. Keep `fakeop` in sync.
+   - `--fields 'label=public key'` is required: without it the output includes the private key.
 
 2. Create a test SSH Key item if the vault has none (check `op item create --help` for your
    `op` version):
