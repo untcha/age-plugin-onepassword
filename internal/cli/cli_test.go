@@ -244,6 +244,9 @@ func TestRecipientsCommand(t *testing.T) {
 	if n := c.Count("private"); n != 0 {
 		t.Fatalf("private key reads = %d, want 0", n)
 	}
+	if got, want := c.Calls(), []string{"list", "public-keys 2"}; !slices.Equal(got, want) {
+		t.Fatalf("calls = %q, want %q", got, want)
+	}
 
 	_, out, _ = run(t, c, "recipients", "--json")
 	var got []map[string]string
@@ -256,7 +259,24 @@ func TestRecipientsCommand(t *testing.T) {
 	}
 }
 
-// cancelingClient lists one SSH key, then cancels ctx before PublicKey fails,
+func TestRecipientsSkipsFingerprintMismatch(t *testing.T) {
+	good, stale := testutil.Ed25519(t), testutil.Ed25519(t)
+	bad := stale.FakeKey("v", "Vault", "i2", "stale")
+	bad.Item.Fingerprint = "SHA256:doesnotmatch"
+	c := &fake.Client{Keys: []fake.Key{good.FakeKey("v", "Vault", "i1", "good"), bad}}
+	code, out, errOut := run(t, c, "recipients")
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errOut)
+	}
+	if want := "op://Vault/good: " + good.AuthorizedKey + "\n"; out != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+	if !strings.Contains(errOut, "stale") {
+		t.Fatalf("stderr = %q, want a warning naming the skipped item", errOut)
+	}
+}
+
+// cancelingClient lists one SSH key, then cancels ctx before PublicKeys fails,
 // simulating a Ctrl-C/timeout landing mid-loop.
 type cancelingClient struct {
 	cancel context.CancelFunc
@@ -272,8 +292,12 @@ func (c cancelingClient) ResolveSSHKey(context.Context, string, string) (onepass
 }
 
 func (c cancelingClient) PublicKey(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("not used")
+}
+
+func (c cancelingClient) PublicKeys(context.Context, []onepassword.SSHKeyItem) (map[string][]byte, error) {
 	c.cancel()
-	return nil, errors.New("op read: interrupted")
+	return nil, errors.New("op item get: interrupted")
 }
 
 func (c cancelingClient) PrivateKey(context.Context, string, string) ([]byte, error) {
